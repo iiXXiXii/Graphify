@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { ErrorHandler, ErrorCategory, GraphifyError } from './errorHandler.js';
 
 /**
  * Date utilities for Graphify
@@ -16,18 +17,30 @@ import { DateTime } from 'luxon';
 export function shiftDate(
   base: DateTime = DateTime.now(),
   years: number = 0,
-  months: number = 0, 
+  months: number = 0,
   weeks: number = 0,
   days: number = 0
 ): string {
-  const shifted = base.plus({
-    years,
-    months,
-    weeks,
-    days,
-  });
-  
-  return shifted.toISO() || shifted.toString();
+  try {
+    const shifted = base.plus({
+      years,
+      months,
+      weeks,
+      days,
+    });
+
+    return shifted.toISO() || shifted.toString();
+  } catch (error) {
+    ErrorHandler.getInstance().handle(
+      new GraphifyError(
+        `Failed to shift date: ${error instanceof Error ? error.message : String(error)}`,
+        ErrorCategory.UNEXPECTED,
+        error instanceof Error ? error : undefined
+      )
+    );
+    // Return current time as fallback
+    return DateTime.now().toISO() || DateTime.now().toString();
+  }
 }
 
 /**
@@ -56,5 +69,68 @@ export function getCurrentDate(): string {
  * @returns DateTime object
  */
 export function parseDate(dateString: string): DateTime {
-  return DateTime.fromISO(dateString);
-} 
+  const date = DateTime.fromISO(dateString);
+  if (!date.isValid) {
+    ErrorHandler.getInstance().handle(
+      new GraphifyError(
+        `Invalid date string: ${dateString}`,
+        ErrorCategory.VALIDATION
+      )
+    );
+    // Return current time as fallback
+    return DateTime.now();
+  }
+  return date;
+}
+
+/**
+ * Format a DateTime object to a user-friendly string
+ * @param date DateTime object
+ * @param format Format to use (defaults to ISO)
+ * @returns Formatted date string
+ */
+export function formatDate(date: DateTime, format: string = 'ISO'): string {
+  try {
+    if (format === 'ISO') {
+      return date.toISO() || date.toString();
+    } else if (format === 'full') {
+      return date.toLocaleString(DateTime.DATETIME_FULL);
+    } else if (format === 'short') {
+      return date.toLocaleString(DateTime.DATETIME_SHORT);
+    } else if (format === 'date') {
+      return date.toLocaleString(DateTime.DATE_FULL);
+    } else {
+      return date.toFormat(format);
+    }
+  } catch (error) {
+    ErrorHandler.getInstance().handle(error);
+    return date.toString();
+  }
+}
+
+/**
+ * Checks if a date is in the future
+ * @param date DateTime to check
+ * @returns True if the date is in the future
+ */
+export function isFutureDate(date: DateTime): boolean {
+  return date > DateTime.now();
+}
+
+/**
+ * Get date range between start and end
+ * @param startDate Start date
+ * @param endDate End date
+ * @returns Array of DateTime objects for each day in the range
+ */
+export function getDateRange(startDate: DateTime, endDate: DateTime): DateTime[] {
+  const result: DateTime[] = [];
+  let currentDate = startDate;
+
+  while (currentDate <= endDate) {
+    result.push(currentDate);
+    currentDate = currentDate.plus({ days: 1 });
+  }
+
+  return result;
+}

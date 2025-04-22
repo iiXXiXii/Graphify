@@ -1,6 +1,7 @@
 import jsonfile from 'jsonfile';
 import fs from 'fs';
 import path from 'path';
+import { ErrorHandler, ErrorCategory, GraphifyError } from './errorHandler.js';
 
 /**
  * File management utilities for Graphify
@@ -24,15 +25,23 @@ export class FileManager {
       return new Promise((resolve, reject) => {
         jsonfile.writeFile(filePath, data, { spaces: 2 }, (err) => {
           if (err) {
-            reject(err);
+            reject(new GraphifyError(
+              `Error writing to file ${filePath}: ${err.message}`,
+              ErrorCategory.FILE_SYSTEM,
+              err
+            ));
           } else {
             resolve();
           }
         });
       });
     } catch (error) {
-      console.error(`Error writing file ${filePath}:`, error);
-      throw error;
+      ErrorHandler.getInstance().handle(error);
+      throw new GraphifyError(
+        `Failed to write JSON to ${filePath}`,
+        ErrorCategory.FILE_SYSTEM,
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -50,7 +59,11 @@ export class FileManager {
               // File doesn't exist, return empty object
               resolve({} as T);
             } else {
-              reject(err);
+              reject(new GraphifyError(
+                `Error reading file ${filePath}: ${err.message}`,
+                ErrorCategory.FILE_SYSTEM,
+                err
+              ));
             }
           } else {
             resolve(data as T);
@@ -58,8 +71,12 @@ export class FileManager {
         });
       });
     } catch (error) {
-      console.error(`Error reading file ${filePath}:`, error);
-      throw error;
+      ErrorHandler.getInstance().handle(error);
+      throw new GraphifyError(
+        `Failed to read JSON from ${filePath}`,
+        ErrorCategory.FILE_SYSTEM,
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -71,4 +88,40 @@ export class FileManager {
   static fileExists(filePath: string): boolean {
     return fs.existsSync(filePath);
   }
-} 
+
+  /**
+   * Creates a directory if it doesn't exist
+   * @param dirPath Path to the directory
+   * @returns True if the directory was created or already exists
+   */
+  static ensureDirectoryExists(dirPath: string): boolean {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+      return true;
+    } catch (error) {
+      ErrorHandler.getInstance().handle(error);
+      return false;
+    }
+  }
+
+  /**
+   * Removes a file if it exists
+   * @param filePath Path to the file
+   * @returns True if the file was removed or didn't exist
+   */
+  static removeFile(filePath: string): boolean {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      return true;
+    } catch (error) {
+      ErrorHandler.getInstance().handle(error);
+      return false;
+    }
+  }
+}
+
+export default FileManager;

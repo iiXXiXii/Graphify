@@ -1,6 +1,8 @@
 /**
  * Utility for generating realistic commit messages
  */
+import { getRandomElement } from './random.js';
+
 export class CommitMessageGenerator {
   /** Common commit message prefixes */
   private static readonly PREFIXES = [
@@ -148,7 +150,7 @@ export class CommitMessageGenerator {
    */
   static generateMessage(): string {
     const random = Math.random();
-    
+
     if (random < 0.4) {
       // Feature or improvement
       return this.generateFeatureMessage();
@@ -169,13 +171,13 @@ export class CommitMessageGenerator {
    * @returns Random feature message
    */
   private static generateFeatureMessage(): string {
-    const prefix = this.getRandomItem(this.PREFIXES.filter(p => 
+    const prefix = getRandomElement(this.PREFIXES.filter(p =>
       ['Add', 'Update', 'Implement', 'Introduce', 'Enhance', 'Improve'].includes(p)));
-    const element = this.getRandomItem(this.CODE_ELEMENTS);
+    const element = getRandomElement(this.CODE_ELEMENTS);
     const hasFor = Math.random() > 0.5;
-    
+
     if (hasFor) {
-      const context = this.getRandomItem(this.CONTEXTS);
+      const context = getRandomElement(this.CONTEXTS);
       return `${prefix} ${element} for ${context}`;
     } else {
       // Sometimes add specific file names
@@ -194,11 +196,11 @@ export class CommitMessageGenerator {
    * @returns Random bug fix message
    */
   private static generateBugFixMessage(): string {
-    const prefix = this.getRandomItem(['Fix', 'Resolve', 'Correct', 'Address']);
-    const bug = this.getRandomItem(this.BUG_TYPES);
-    const location = this.getRandomItem(this.LOCATIONS);
-    const context = this.getRandomItem(this.CONTEXTS);
-    
+    const prefix = getRandomElement(['Fix', 'Resolve', 'Correct', 'Address']);
+    const bug = getRandomElement(this.BUG_TYPES);
+    const location = getRandomElement(this.LOCATIONS);
+    const context = getRandomElement(this.CONTEXTS);
+
     // Sometimes specify what was fixed
     const hasWhat = Math.random() > 0.5;
     if (hasWhat) {
@@ -213,9 +215,9 @@ export class CommitMessageGenerator {
    * @returns Random refactoring message
    */
   private static generateRefactoringMessage(): string {
-    const prefix = this.getRandomItem(['Refactor', 'Clean up', 'Simplify', 'Optimize', 'Restructure']);
-    const element = this.getRandomItem(this.CODE_ELEMENTS);
-    
+    const prefix = getRandomElement(['Refactor', 'Clean up', 'Simplify', 'Optimize', 'Restructure']);
+    const element = getRandomElement(this.CODE_ELEMENTS);
+
     // Sometimes specify what was refactored
     const hasWhat = Math.random() > 0.6;
     if (hasWhat) {
@@ -249,8 +251,8 @@ export class CommitMessageGenerator {
       'Update config',
       'Refine styling'
     ];
-    
-    return this.getRandomItem(types);
+
+    return getRandomElement(types);
   }
 
   /**
@@ -280,37 +282,28 @@ export class CommitMessageGenerator {
       'types',
       'constants'
     ];
-    
-    const prefix = this.getRandomItem(prefixes);
-    const extension = this.getRandomItem(this.FILE_EXTENSIONS);
-    
+
+    const prefix = getRandomElement(prefixes);
+    const extension = getRandomElement(this.FILE_EXTENSIONS);
+
     // Sometimes add folder structure
     const hasFolders = Math.random() > 0.6;
     if (hasFolders) {
       const folders = ['src', 'app', 'components', 'utils', 'models', 'services', 'hooks', 'helpers', 'pages', 'tests'];
       const folderCount = Math.floor(Math.random() * 2) + 1;
       const selectedFolders: string[] = [];
-      
+
       for (let i = 0; i < folderCount; i++) {
-        const folder = this.getRandomItem(folders);
+        const folder = getRandomElement(folders);
         if (!selectedFolders.includes(folder)) {
           selectedFolders.push(folder);
         }
       }
-      
+
       return `${selectedFolders.join('/')}/${prefix}${extension}`;
     } else {
       return `${prefix}${extension}`;
     }
-  }
-
-  /**
-   * Get a random item from an array
-   * @param items Array of items
-   * @returns Random item
-   */
-  private static getRandomItem<T>(items: T[]): T {
-    return items[Math.floor(Math.random() * items.length)];
   }
 
   /**
@@ -320,11 +313,11 @@ export class CommitMessageGenerator {
    */
   static generateMultiple(count: number): string[] {
     const messages = new Set<string>();
-    
+
     while (messages.size < count) {
       messages.add(this.generateMessage());
     }
-    
+
     return Array.from(messages);
   }
 
@@ -337,7 +330,9 @@ export class CommitMessageGenerator {
     if (!templates || templates.length === 0) {
       return this.generateMessage();
     }
-    
-    return this.getRandomItem(templates);
+
+    return getRandomElement(templates);
   }
-} 
+}
+
+export default CommitMessageGenerator;

@@ -24,7 +24,7 @@ export function getRandomDate(startDate: Date, endDate: Date): Date {
   const startTimestamp = startDate.getTime();
   const endTimestamp = endDate.getTime();
   const randomTimestamp = getRandomInt(startTimestamp, endTimestamp);
-  
+
   return new Date(randomTimestamp);
 }
 
@@ -39,4 +39,39 @@ export function shuffleArray<T>(array: T[]): T[] {
     [array[i], array[j]] = [array[j], array[i]];
   }
   return array;
-} 
+}
+
+/**
+ * Generates a random element from an array
+ * @param array Array to select from
+ * @returns Random element from the array
+ */
+export function getRandomElement<T>(array: T[]): T {
+  return array[getRandomInt(0, array.length - 1)];
+}
+
+/**
+ * Generates a random boolean with specified probability
+ * @param probability Probability of returning true (0-1)
+ * @returns Random boolean
+ */
+export function getRandomBoolean(probability: number = 0.5): boolean {
+  return Math.random() < probability;
+}
+
+/**
+ * Generates a random string of specified length
+ * @param length Length of the string
+ * @param charset Character set to use (defaults to alphanumeric)
+ * @returns Random string
+ */
+export function getRandomString(length: number, charset: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'): string {
+  let result = '';
+  const charactersLength = charset.length;
+
+  for (let i = 0; i < length; i++) {
+    result += charset.charAt(Math.floor(Math.random() * charactersLength));
+  }
+
+  return result;
+}

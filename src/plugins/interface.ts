@@ -2,6 +2,7 @@
  * Plugin system interface for Graphify
  */
 import { GraphifyConfig, PatternPlugin } from '../types/config.js';
+import { ErrorHandler, ErrorCategory, GraphifyError } from '../utils/errorHandler.js';
 
 /**
  * Plugin registry for managing pattern plugins
@@ -26,12 +27,24 @@ export class PluginRegistry {
    * @returns Whether the registration was successful
    */
   public registerPattern(plugin: PatternPlugin): boolean {
-    if (this.patterns.has(plugin.name)) {
-      return false; // Pattern with this name already exists
-    }
+    try {
+      if (this.patterns.has(plugin.name)) {
+        console.warn(`Pattern plugin '${plugin.name}' is already registered. Skipping.`);
+        return false; // Pattern with this name already exists
+      }
 
-    this.patterns.set(plugin.name, plugin);
-    return true;
+      this.patterns.set(plugin.name, plugin);
+      return true;
+    } catch (error) {
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Failed to register pattern plugin '${plugin.name}': ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.PLUGIN,
+          error instanceof Error ? error : undefined
+        )
+      );
+      return false;
+    }
   }
 
   /**
@@ -61,11 +74,46 @@ export class PluginRegistry {
   }
 
   /**
-   * Initialize default pattern plugins
+   * Generate a pattern based on config
+   * @param config Configuration to use
+   * @returns Generated pattern or null if pattern not found
    */
-  public initializeDefaults(): void {
-    // This will be implemented when we add the default pattern plugins
-    // We'll import and register them here
+  public generatePattern(config: GraphifyConfig): number[][] | null {
+    const patternName = config.pattern || 'random';
+    const plugin = this.getPattern(patternName);
+
+    if (!plugin) {
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Pattern plugin '${patternName}' not found`,
+          ErrorCategory.PLUGIN
+        )
+      );
+      return null;
+    }
+
+    try {
+      if (!plugin.validate(config)) {
+        ErrorHandler.getInstance().handle(
+          new GraphifyError(
+            `Configuration is not valid for pattern '${patternName}'`,
+            ErrorCategory.VALIDATION
+          )
+        );
+        return null;
+      }
+
+      return plugin.generatePattern(config);
+    } catch (error) {
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Error generating pattern '${patternName}': ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.PLUGIN,
+          error instanceof Error ? error : undefined
+        )
+      );
+      return null;
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import simpleGit, { SimpleGit } from 'simple-git';
-import { GraphifyConfig } from '../config/default';
+import { GraphifyConfig } from '../types/config.js';
+import { ErrorHandler, ErrorCategory, GraphifyError } from './errorHandler.js';
 
 /**
  * Git utilities for Graphify
@@ -26,7 +27,10 @@ export class GitService {
     try {
       const isRepo = await this.git.checkIsRepo();
       if (!isRepo) {
-        throw new Error('Current directory is not a Git repository. Please run this in a Git repository or initialize one first.');
+        throw new GraphifyError(
+          'Current directory is not a Git repository. Please run this in a Git repository or initialize one first.',
+          ErrorCategory.GIT
+        );
       }
 
       // Get current branch
@@ -37,7 +41,7 @@ export class GitService {
       // If remote branch is different from current, handle it
       if (this.config.remoteBranch !== currentBranch) {
         console.log(`Note: Current branch '${currentBranch}' differs from configured remote branch '${this.config.remoteBranch}'`);
-        
+
         // Update config to use current branch
         this.config.remoteBranch = currentBranch;
         console.log(`Using current branch '${currentBranch}' for pushes`);
@@ -52,7 +56,7 @@ export class GitService {
           this.config.pushToRemote = false;
         } else {
           console.log(`Remote repositories: ${remotes.map(r => `${r.name} (${r.refs.fetch})`).join(', ')}`);
-          
+
           // Store the first remote name
           this.config.remoteName = remotes[0].name;
         }
@@ -63,7 +67,13 @@ export class GitService {
 
       this.initialized = true;
     } catch (error) {
-      console.error('Error initializing Git service:', error);
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Error initializing Git service: ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.GIT,
+          error instanceof Error ? error : undefined
+        )
+      );
       throw error;
     }
   }
@@ -77,11 +87,17 @@ export class GitService {
     if (!this.initialized) {
       await this.initialize();
     }
-    
+
     try {
       await this.git.add(files);
     } catch (error) {
-      console.error('Error adding files to Git:', error);
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Error adding files to Git: ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.GIT,
+          error instanceof Error ? error : undefined
+        )
+      );
       throw error;
     }
   }
@@ -96,11 +112,17 @@ export class GitService {
     if (!this.initialized) {
       await this.initialize();
     }
-    
+
     try {
       await this.git.commit(message, { '--date': date });
     } catch (error) {
-      console.error('Error creating commit:', error);
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Error creating commit: ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.GIT,
+          error instanceof Error ? error : undefined
+        )
+      );
       throw error;
     }
   }
@@ -113,18 +135,24 @@ export class GitService {
     if (!this.initialized) {
       await this.initialize();
     }
-    
+
     // Skip push if disabled
     if (this.config.pushToRemote === false) {
       console.log('Skipping push to remote (disabled in config)');
       return;
     }
-    
+
     try {
       const remoteName = this.config.remoteName || 'origin';
       await this.git.push(['-u', remoteName, this.config.remoteBranch]);
     } catch (error) {
-      console.error(`Error pushing to remote. You may need to set up the remote repository or use --no-push to skip pushing.`, error);
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Error pushing to remote. You may need to set up the remote repository or use --no-push to skip pushing: ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.GIT,
+          error instanceof Error ? error : undefined
+        )
+      );
       throw error;
     }
   }
@@ -140,14 +168,22 @@ export class GitService {
     try {
       await this.addFiles(files);
       await this.commit(message, date);
-      
+
       // Only push if enabled
       if (this.config.pushToRemote !== false) {
         await this.push();
       }
     } catch (error) {
-      console.error('Error during git operations:', error);
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Error during git operations: ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.GIT,
+          error instanceof Error ? error : undefined
+        )
+      );
       throw error;
     }
   }
-} 
+}
+
+export default GitService;

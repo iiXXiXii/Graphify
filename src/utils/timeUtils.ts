@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
-import { TimeOfDayPreference } from '../config/default';
-import { getRandomInt } from './random';
+import { TimeOfDayPreference } from '../types/config.js';
+import { getRandomInt } from './random.js';
+import { ErrorHandler, ErrorCategory, GraphifyError } from './errorHandler.js';
 
 /**
  * Time utilities for generating realistic timestamps
@@ -14,7 +15,7 @@ export class TimeUtils {
   static getRandomTimeOfDay(preference: TimeOfDayPreference = 'working-hours'): { hour: number, minute: number } {
     let hour: number;
     const minute = getRandomInt(0, 59);
-    
+
     switch (preference) {
       case 'morning':
         hour = getRandomInt(8, 11);
@@ -32,8 +33,8 @@ export class TimeUtils {
         hour = getRandomInt(9, 17);
         break;
       case 'after-hours':
-        hour = Math.random() > 0.5 
-          ? getRandomInt(18, 23) 
+        hour = Math.random() > 0.5
+          ? getRandomInt(18, 23)
           : getRandomInt(0, 7);
         break;
       case 'random':
@@ -41,7 +42,7 @@ export class TimeUtils {
         hour = getRandomInt(0, 23);
         break;
     }
-    
+
     return { hour, minute };
   }
 
@@ -59,28 +60,40 @@ export class TimeUtils {
     minTimeBetween: number = 30,
     lastCommitTime?: DateTime
   ): DateTime {
-    // Get random time
-    const { hour, minute } = this.getRandomTimeOfDay(preference);
-    
-    // Create a new date with the random time
-    let result = baseDate.set({ hour, minute, second: getRandomInt(0, 59) });
-    
-    // If there was a previous commit time on the same day, ensure minimum time between
-    if (lastCommitTime && lastCommitTime.hasSame(result, 'day')) {
-      const minDiff = lastCommitTime.diff(result, 'minutes').minutes;
-      
-      if (Math.abs(minDiff) < minTimeBetween) {
-        // Add minimum time to previous commit
-        result = lastCommitTime.plus({ minutes: minTimeBetween + getRandomInt(1, 30) });
-        
-        // If this pushes us to the next day, adjust back
-        if (!result.hasSame(baseDate, 'day')) {
-          result = baseDate.set({ hour: 23, minute: getRandomInt(30, 59) });
+    try {
+      // Get random time
+      const { hour, minute } = this.getRandomTimeOfDay(preference);
+
+      // Create a new date with the random time
+      let result = baseDate.set({ hour, minute, second: getRandomInt(0, 59) });
+
+      // If there was a previous commit time on the same day, ensure minimum time between
+      if (lastCommitTime && lastCommitTime.hasSame(result, 'day')) {
+        const minDiff = lastCommitTime.diff(result, 'minutes').minutes;
+
+        if (Math.abs(minDiff) < minTimeBetween) {
+          // Add minimum time to previous commit
+          result = lastCommitTime.plus({ minutes: minTimeBetween + getRandomInt(1, 30) });
+
+          // If this pushes us to the next day, adjust back
+          if (!result.hasSame(baseDate, 'day')) {
+            result = baseDate.set({ hour: 23, minute: getRandomInt(30, 59) });
+          }
         }
       }
+
+      return result;
+    } catch (error) {
+      ErrorHandler.getInstance().handle(
+        new GraphifyError(
+          `Error applying time variance: ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCategory.UNEXPECTED,
+          error instanceof Error ? error : undefined
+        )
+      );
+      // Return base date as fallback
+      return baseDate;
     }
-    
-    return result;
   }
 
   /**
@@ -90,34 +103,51 @@ export class TimeUtils {
    * @returns True if the date is a holiday
    */
   static isHoliday(date: DateTime, country: string = 'US'): boolean {
-    // Simple implementation for common US holidays
-    // Could be expanded to use a proper holiday calendar library
-    const month = date.month;
-    const day = date.day;
-    const dayOfWeek = date.weekday;
-    
-    // Check for common US holidays
-    if (country === 'US') {
-      // New Year's Day
-      if (month === 1 && day === 1) return true;
-      
-      // Memorial Day (last Monday in May)
-      if (month === 5 && dayOfWeek === 1 && date.endOf('month').diff(date, 'days').days < 7) return true;
-      
-      // Independence Day
-      if (month === 7 && day === 4) return true;
-      
-      // Labor Day (first Monday in September)
-      if (month === 9 && dayOfWeek === 1 && day <= 7) return true;
-      
-      // Thanksgiving (fourth Thursday in November)
-      if (month === 11 && dayOfWeek === 4 && day > 21 && day < 29) return true;
-      
-      // Christmas
-      if (month === 12 && day === 25) return true;
+    try {
+      // Simple implementation for common US holidays
+      // Could be expanded to use a proper holiday calendar library
+      const month = date.month;
+      const day = date.day;
+      const dayOfWeek = date.weekday;
+
+      // Check for common US holidays
+      if (country === 'US') {
+        // New Year's Day
+        if (month === 1 && day === 1) return true;
+
+        // Martin Luther King Jr. Day (third Monday in January)
+        if (month === 1 && dayOfWeek === 1 && day > 14 && day < 22) return true;
+
+        // Presidents' Day (third Monday in February)
+        if (month === 2 && dayOfWeek === 1 && day > 14 && day < 22) return true;
+
+        // Memorial Day (last Monday in May)
+        if (month === 5 && dayOfWeek === 1 && date.endOf('month').diff(date, 'days').days < 7) return true;
+
+        // Independence Day
+        if (month === 7 && day === 4) return true;
+
+        // Labor Day (first Monday in September)
+        if (month === 9 && dayOfWeek === 1 && day <= 7) return true;
+
+        // Columbus Day (second Monday in October)
+        if (month === 10 && dayOfWeek === 1 && day > 7 && day <= 14) return true;
+
+        // Veterans Day
+        if (month === 11 && day === 11) return true;
+
+        // Thanksgiving (fourth Thursday in November)
+        if (month === 11 && dayOfWeek === 4 && day > 21 && day < 29) return true;
+
+        // Christmas
+        if (month === 12 && day === 25) return true;
+      }
+
+      return false;
+    } catch (error) {
+      ErrorHandler.getInstance().handle(error);
+      return false;
     }
-    
-    return false;
   }
 
   /**
@@ -134,29 +164,34 @@ export class TimeUtils {
     count: number = 2,
     maxLength: number = 14
   ): Array<[DateTime, DateTime]> {
-    const vacations: Array<[DateTime, DateTime]> = [];
-    const totalDays = endDate.diff(startDate, 'days').days;
-    
-    // Don't generate vacations for short periods
-    if (totalDays < 30) {
+    try {
+      const vacations: Array<[DateTime, DateTime]> = [];
+      const totalDays = endDate.diff(startDate, 'days').days;
+
+      // Don't generate vacations for short periods
+      if (totalDays < 30) {
+        return vacations;
+      }
+
+      // Generate vacation periods
+      for (let i = 0; i < count; i++) {
+        // Random start date between startDate and 14 days before endDate
+        const daysOffset = getRandomInt(10, totalDays - maxLength - 5);
+        const vacationStart = startDate.plus({ days: daysOffset });
+
+        // Random length between 3 and maxLength
+        const vacationLength = getRandomInt(3, maxLength);
+        const vacationEnd = vacationStart.plus({ days: vacationLength });
+
+        // Add to list
+        vacations.push([vacationStart, vacationEnd]);
+      }
+
       return vacations;
+    } catch (error) {
+      ErrorHandler.getInstance().handle(error);
+      return [];
     }
-    
-    // Generate vacation periods
-    for (let i = 0; i < count; i++) {
-      // Random start date between startDate and 14 days before endDate
-      const daysOffset = getRandomInt(10, totalDays - maxLength - 5);
-      const vacationStart = startDate.plus({ days: daysOffset });
-      
-      // Random length between 3 and maxLength
-      const vacationLength = getRandomInt(3, maxLength);
-      const vacationEnd = vacationStart.plus({ days: vacationLength });
-      
-      // Add to list
-      vacations.push([vacationStart, vacationEnd]);
-    }
-    
-    return vacations;
   }
 
   /**
@@ -186,24 +221,53 @@ export class TimeUtils {
     cycleStart: DateTime,
     cycleLength: number = 14
   ): number {
-    // Calculate day within cycle
-    const daysSinceCycleStart = date.diff(cycleStart, 'days').days;
-    const dayInCycle = daysSinceCycleStart % cycleLength;
-    const cyclePosition = dayInCycle / cycleLength;
-    
-    // Weight based on position in cycle
-    // Beginning: Planning phase (fewer commits)
-    // Middle: Implementation phase (more commits)
-    // End: Testing/release phase (medium commits)
-    if (cyclePosition < 0.2) {
-      // Planning phase - fewer commits
-      return 0.5 + cyclePosition;
-    } else if (cyclePosition < 0.8) {
-      // Implementation phase - more commits
-      return 1.0 + 0.5 * Math.sin((cyclePosition - 0.2) * Math.PI / 0.6);
-    } else {
-      // Testing/release phase - tapering off
-      return 1.0 - (cyclePosition - 0.8) * 2;
+    try {
+      // Calculate day within cycle
+      const daysSinceCycleStart = date.diff(cycleStart, 'days').days;
+      const dayInCycle = daysSinceCycleStart % cycleLength;
+      const cyclePosition = dayInCycle / cycleLength;
+
+      // Weight based on position in cycle
+      // Beginning: Planning phase (fewer commits)
+      // Middle: Implementation phase (more commits)
+      // End: Testing/release phase (medium commits)
+      if (cyclePosition < 0.2) {
+        // Planning phase - fewer commits
+        return 0.5 + cyclePosition;
+      } else if (cyclePosition < 0.8) {
+        // Implementation phase - more commits
+        return 1.0 + 0.5 * Math.sin((cyclePosition - 0.2) * Math.PI / 0.6);
+      } else {
+        // Testing/release phase - tapering off
+        return 1.0 - (cyclePosition - 0.8) * 2;
+      }
+    } catch (error) {
+      ErrorHandler.getInstance().handle(error);
+      return 1.0; // Default to normal weight
     }
   }
-} 
+
+  /**
+   * Format a duration in milliseconds to a human-readable string
+   * @param ms Duration in milliseconds
+   * @returns Formatted duration string
+   */
+  static formatDuration(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      return `${days}d ${hours % 24}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }
+}
+
+export default TimeUtils;
