@@ -1,81 +1,72 @@
-import { Container } from '../application/services/container';
-import { BasePatternPlugin } from './patterns/basePatternPlugin';
+/**
+ * Plugin system interface for Graphify
+ */
+import { GraphifyConfig, PatternPlugin } from '../types/config.js';
 
 /**
- * Context provided to plugins during initialization
+ * Plugin registry for managing pattern plugins
  */
-export interface PluginContext {
-  /**
-   * The DI container to register services
-   */
-  container: Container;
+export class PluginRegistry {
+  private static instance: PluginRegistry;
+  private patterns: Map<string, PatternPlugin> = new Map();
 
   /**
-   * Register a pattern generator plugin
-   * @param name Name of the pattern
-   * @param pattern The pattern plugin instance
+   * Get the singleton instance
    */
-  registerPattern: (name: string, pattern: BasePatternPlugin) => void;
+  public static getInstance(): PluginRegistry {
+    if (!PluginRegistry.instance) {
+      PluginRegistry.instance = new PluginRegistry();
+    }
+    return PluginRegistry.instance;
+  }
 
   /**
-   * Register a command
+   * Register a pattern plugin
+   * @param plugin The pattern plugin to register
+   * @returns Whether the registration was successful
    */
-  registerCommand: (name: string, handler: any) => void;
+  public registerPattern(plugin: PatternPlugin): boolean {
+    if (this.patterns.has(plugin.name)) {
+      return false; // Pattern with this name already exists
+    }
+
+    this.patterns.set(plugin.name, plugin);
+    return true;
+  }
 
   /**
-   * Register a validation rule
+   * Get a specific pattern by name
+   * @param name The name of the pattern
+   * @returns The pattern plugin, or undefined if not found
    */
-  registerValidationRule: (name: string, rule: any) => void;
+  public getPattern(name: string): PatternPlugin | undefined {
+    return this.patterns.get(name);
+  }
 
   /**
-   * Register a formatter
+   * Get all registered patterns
+   * @returns Array of all registered pattern plugins
    */
-  registerFormatter: (name: string, formatter: any) => void;
+  public getAllPatterns(): PatternPlugin[] {
+    return Array.from(this.patterns.values());
+  }
 
   /**
-   * Register a theme
+   * Check if a pattern exists
+   * @param name The name of the pattern
+   * @returns Whether the pattern exists
    */
-  registerTheme: (name: string, theme: any) => void;
+  public hasPattern(name: string): boolean {
+    return this.patterns.has(name);
+  }
 
   /**
-   * Get the current configuration
+   * Initialize default pattern plugins
    */
-  getConfig: () => any;
+  public initializeDefaults(): void {
+    // This will be implemented when we add the default pattern plugins
+    // We'll import and register them here
+  }
 }
 
-/**
- * Base interface for all plugins
- */
-export interface Plugin {
-  /**
-   * Unique name of the plugin
-   */
-  name: string;
-
-  /**
-   * Human-readable description of the plugin
-   */
-  description: string;
-
-  /**
-   * Plugin version
-   */
-  version: string;
-
-  /**
-   * Optional list of plugin dependencies
-   */
-  dependencies?: string[];
-
-  /**
-   * Initialize the plugin with the provided context
-   * @param context The plugin context
-   */
-  initialize(context: PluginContext): void | Promise<void>;
-
-  /**
-   * Optional cleanup method called when the plugin is being unloaded
-   * Use this to clean up any resources created by the plugin
-   */
-  cleanup?(): void | Promise<void>;
-}
+export default PluginRegistry;
