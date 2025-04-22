@@ -1,0 +1,9 @@
+src/
+tests/
+coverage/
+*.test.*
+tsconfig.json
+README.md~
+CONTRIBUTING.md~
+CODEBASE_REVIEW_AND_PLAN.md
+.improvements.md
