@@ -26,5 +26,6 @@
     "noPropertyAccessFromIndexSignature": false,
     "noImplicitReturns": true
   },
-  "include": ["src"]
+  "include": ["graphify-cli/src", "backend/src", "frontend/src"],
+  "exclude": ["node_modules", "dist"]
 }

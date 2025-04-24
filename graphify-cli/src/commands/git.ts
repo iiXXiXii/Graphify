@@ -1,4 +1,4 @@
-import * as simpleGit from 'simple-git';
+import simpleGit from 'simple-git';
 
 export async function executeGitOperations(date: string, message: string) {
   const git = simpleGit();

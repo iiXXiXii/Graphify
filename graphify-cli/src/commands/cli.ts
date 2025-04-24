@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { prompt } from 'inquirer';
+import inquirer from 'inquirer';
 import { executeGitOperations } from './git';
 import { validateDateInput, parseDate } from './date';
 import { authenticateWithGitHub } from './auth';
@@ -50,7 +50,7 @@ program
   });
 
 async function promptForDate() {
-  const response = await prompt({
+  const response = await inquirer.prompt({
     type: 'input',
     name: 'date',
     message: 'Enter the date for the commit (YYYY-MM-DD):',

@@ -1,4 +1,4 @@
-import { createOAuthDeviceAuth } from '@octokit/auth';
+import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device';
 
 let authToken: string | null = null;
 
