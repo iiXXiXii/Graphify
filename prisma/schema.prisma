@@ -1,3 +1,6 @@
+// This is your Prisma schema file
+// Learn more about it at https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,34 +11,84 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  email     String   @unique
-  patterns  Pattern[]
-  schedules Schedule[]
-  logs      Log[]
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  email         String?   @unique
+  githubId      String    @unique
+  githubLogin   String    @unique
+  name          String?
+  avatarUrl     String?
+  accessToken   String?
+  refreshToken  String?
+  patterns      Pattern[]
+  schedules     Schedule[]
+  logs          Log[]
 }
 
 model Pattern {
-  id        Int      @id @default(autoincrement())
-  name      String
-  data      Json
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  name         String
+  description  String?
+  isPrivate    Boolean    @default(false)
+  startDate    DateTime?
+  endDate      DateTime?
+  grid         Json       // The actual pattern grid data (2D array)
+  tags         String[]   // Array of tag strings
+  columns      Int        // Number of columns in the grid
+  rows         Int        // Number of rows in the grid
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules    Schedule[]
+  logs         Log[]
 }
 
 model Schedule {
-  id        Int      @id @default(autoincrement())
-  patternId Int
-  pattern   Pattern  @relation(fields: [patternId], references: [id])
-  startTime DateTime
-  endTime   DateTime
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  name         String?
+  description  String?
+  isActive     Boolean    @default(true)
+  patternId    String
+  pattern      Pattern    @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rrule        String     // RRule string representation
+  lastRun      DateTime?  // Last time the schedule was executed
+  nextRun      DateTime?  // Next scheduled execution time
+  logs         Log[]
 }
 
 model Log {
-  id        Int      @id @default(autoincrement())
-  message   String
-  timestamp DateTime @default(now())
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  timestamp    DateTime   @default(now()) // When the event occurred
+  type         LogType
+  message      String
+  details      Json?      // Additional details about the log entry
+  success      Boolean    @default(true)
+  userId       String?
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  patternId    String?
+  pattern      Pattern?   @relation(fields: [patternId], references: [id], onDelete: SetNull)
+  scheduleId   String?
+  schedule     Schedule?  @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+}
+
+enum LogType {
+  INFO
+  WARNING
+  ERROR
+  PATTERN_CREATED
+  PATTERN_UPDATED
+  PATTERN_DELETED
+  SCHEDULE_CREATED
+  SCHEDULE_UPDATED
+  SCHEDULE_DELETED
+  SCHEDULE_EXECUTED
+  GIT_COMMIT
+  AUTH
 }

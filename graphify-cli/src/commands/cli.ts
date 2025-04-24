@@ -1,61 +1,181 @@
-import { Command } from 'commander';
-import inquirer from 'inquirer';
-import { executeGitOperations } from './git';
-import { validateDateInput, parseDate } from './date';
-import { authenticateWithGitHub } from './auth';
+import { Command } from '@oclif/core';
+import chalk from 'chalk';
+import * as inquirer from 'inquirer';
+import { isAuthenticated } from './auth';
 
-const program = new Command();
+export default class CLI extends Command {
+  static description = 'Graphify CLI for creating GitHub contribution patterns';
 
-program
-  .name('graphify')
-  .description('Customize GitHub contribution graphs by generating backdated commits')
-  .version('1.0.0');
+  static examples = [
+    '$ graphify auth',
+    '$ graphify pattern create',
+    '$ graphify commit --pattern pattern.json',
+    '$ graphify',
+  ];
 
-program
-  .command('commit')
-  .description('Generate backdated commits')
-  .option('-d, --date <date>', 'Specify the date for the commit')
-  .option('-m, --message <message>', 'Specify a custom commit message')
-  .option('--dry-run', 'Preview the commit schedule without making changes')
-  .action(async (options) => {
+  // No flags for the base command - it will run interactive mode
+  static flags = {};
+
+  async run(): Promise<void> {
+    // Welcome message
+    this.displayWelcomeBanner();
+
     try {
-      const date = options.date ? validateDateInput(options.date) : await promptForDate();
-      const parsedDate = parseDate(date);
-      const message = options.message || `Automated commit on ${date}`;
+      // Check authentication status
+      await this.checkAuth();
 
-      if (options.dryRun) {
-        console.log('Dry Run:');
-        console.log(`Date: ${parsedDate}`);
-        console.log(`Message: ${message}`);
-        return;
+      // Display main menu
+      await this.showMainMenu();
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  private displayWelcomeBanner(): void {
+    console.log(chalk.green('┌───────────────────────────────────────────┐'));
+    console.log(chalk.green('│                                           │'));
+    console.log(chalk.green('│           ') + chalk.bold.green('GRAPHIFY CLI') + chalk.green('                │'));
+    console.log(chalk.green('│     Create GitHub contribution patterns   │'));
+    console.log(chalk.green('│                                           │'));
+    console.log(chalk.green('└───────────────────────────────────────────┘'));
+    console.log('');
+  }
+
+  private async checkAuth(): Promise<void> {
+    // Check if user is authenticated
+    const isUserAuthenticated = isAuthenticated();
+
+    if (!isUserAuthenticated) {
+      console.log(chalk.yellow('You are not authenticated with GitHub.'));
+
+      const { shouldAuth } = await inquirer.prompt({
+        type: 'confirm',
+        name: 'shouldAuth',
+        message: 'Would you like to authenticate now?',
+        default: true,
+      });
+
+      if (shouldAuth) {
+        try {
+          await this.config.runCommand('auth');
+          console.log(chalk.green('✓ Authentication successful!'));
+        } catch (error) {
+          console.log(chalk.yellow('Authentication skipped. Some features may be limited.'));
+        }
+      } else {
+        console.log(chalk.yellow('Authentication skipped. Some features may be limited.'));
       }
-
-      await executeGitOperations(parsedDate, message);
-      console.log('Commits generated successfully!');
-    } catch (error) {
-      console.error('Error:', error.message);
+    } else {
+      console.log(chalk.green('✓ Authenticated with GitHub'));
     }
-  });
+  }
 
-program
-  .command('auth')
-  .description('Authenticate with GitHub')
-  .action(async () => {
+  private async showMainMenu(): Promise<void> {
+    // Define the main menu options
+    const menuOptions = [
+      {
+        name: 'Authentication',
+        value: 'auth',
+        description: 'Manage GitHub authentication',
+      },
+      {
+        name: 'Create Pattern',
+        value: 'pattern-create',
+        description: 'Design a new contribution pattern',
+      },
+      {
+        name: 'Import Pattern',
+        value: 'import',
+        description: 'Import a pattern from a file',
+      },
+      {
+        name: 'Create Commits',
+        value: 'commit',
+        description: 'Generate commits based on a pattern',
+      },
+      {
+        name: 'Exit',
+        value: 'exit',
+        description: 'Exit Graphify CLI',
+      },
+    ];
+
+    // Loop until user exits
+    let exit = false;
+    while (!exit) {
+      const { action } = await inquirer.prompt({
+        type: 'list',
+        name: 'action',
+        message: 'What would you like to do?',
+        choices: menuOptions.map(option => ({
+          name: `${option.name} - ${chalk.dim(option.description)}`,
+          value: option.value,
+          short: option.name,
+        })),
+      });
+
+      if (action === 'exit') {
+        exit = true;
+        console.log(chalk.blue('Goodbye! 👋'));
+      } else {
+        await this.executeCommand(action);
+      }
+    }
+  }
+
+  private async executeCommand(command: string): Promise<void> {
     try {
-      await authenticateWithGitHub();
-      console.log('You are now authenticated with GitHub.');
+      // Map menu options to actual commands
+      const commandMappings: Record<string, string> = {
+        'auth': 'auth',
+        'pattern-create': 'pattern create',
+        'import': 'import',
+        'commit': 'commit',
+      };
+
+      // Run the selected command
+      if (commandMappings[command]) {
+        // Print a separator
+        console.log('\n' + chalk.dim('─'.repeat(50)) + '\n');
+
+        // Run the command
+        await this.config.runCommand(commandMappings[command]);
+
+        // Add a "press any key to continue" prompt
+        console.log('\n');
+        await inquirer.prompt({
+          type: 'input',
+          name: 'continue',
+          message: 'Press Enter to return to the main menu...',
+        });
+      } else {
+        console.error(chalk.red(`Unknown command: ${command}`));
+      }
     } catch (error) {
-      console.error('Authentication failed:', error.message);
+      this.handleError(error);
+
+      // Wait for user acknowledgment before returning to menu
+      await inquirer.prompt({
+        type: 'input',
+        name: 'continue',
+        message: 'Press Enter to return to the main menu...',
+      });
     }
-  });
+  }
 
-async function promptForDate() {
-  const response = await inquirer.prompt({
-    type: 'input',
-    name: 'date',
-    message: 'Enter the date for the commit (YYYY-MM-DD):',
-  });
-  return response.date;
+  private handleError(error: any): void {
+    // Extract the error message
+    const errorMessage = error?.message || 'Unknown error';
+
+    // Log the error with appropriate formatting
+    console.error(chalk.red('\n❌ Error:'), errorMessage);
+
+    // Add debugging info in verbose mode
+    if (process.env.DEBUG || process.env.GRAPHIFY_DEBUG) {
+      console.error(chalk.gray('\nDebug information:'));
+      console.error(chalk.gray(error?.stack || 'No stack trace available'));
+    } else {
+      console.error(chalk.dim('\nTip: Run with DEBUG=true for more information.'));
+    }
+  }
 }
-
-program.parse(process.argv);

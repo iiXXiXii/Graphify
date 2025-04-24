@@ -1,0 +1,144 @@
+scalar Date
+
+type User {
+  id: ID!
+  username: String!
+  email: String
+  patterns: [Pattern!]
+  schedules: [Schedule!]
+}
+
+type Pattern {
+  id: ID!
+  name: String!
+  description: String
+  grid: [[Int!]!]!
+  rows: Int!
+  columns: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  isPublic: Boolean!
+  tags: [String!]
+  creator: User
+  userId: ID
+}
+
+type Repository {
+  id: ID!
+  name: String!
+  fullName: String!
+  url: String!
+}
+
+type ScheduleSettings {
+  startDate: Date!
+  endDate: Date!
+  density: Float!
+  randomize: Boolean!
+  workHoursOnly: Boolean!
+  avoidWeekends: Boolean!
+  timezone: String!
+  maxCommitsPerDay: Int!
+  recurrence: String
+  recurrenceInterval: Int
+}
+
+type Schedule {
+  id: ID!
+  pattern: Pattern!
+  patternId: ID!
+  repositories: [Repository!]!
+  settings: ScheduleSettings!
+  status: String!
+  createdAt: Date!
+  updatedAt: Date!
+  user: User!
+  userId: ID!
+  commits: [Commit!]
+}
+
+type Commit {
+  id: ID!
+  message: String!
+  date: Date!
+  hash: String
+  status: String!
+  repository: Repository!
+  schedule: Schedule!
+  scheduleId: ID!
+}
+
+input PatternInput {
+  name: String!
+  description: String
+  grid: [[Int!]!]!
+  rows: Int!
+  columns: Int!
+  isPublic: Boolean
+  tags: [String!]
+}
+
+input RepositoryInput {
+  id: ID!
+  name: String!
+  fullName: String!
+  url: String!
+}
+
+input ScheduleSettingsInput {
+  startDate: Date!
+  endDate: Date!
+  density: Float!
+  randomize: Boolean!
+  workHoursOnly: Boolean!
+  avoidWeekends: Boolean!
+  timezone: String!
+  maxCommitsPerDay: Int!
+  recurrence: String
+  recurrenceInterval: Int
+}
+
+input ScheduleInput {
+  patternId: ID!
+  repositories: [RepositoryInput!]!
+  settings: ScheduleSettingsInput!
+}
+
+type Query {
+  # User queries
+  me: User
+
+  # Pattern queries
+  myPatterns: [Pattern!]!
+  publicPatterns: [Pattern!]!
+  pattern(id: ID!): Pattern
+
+  # Schedule queries
+  mySchedules: [Schedule!]!
+  schedule(id: ID!): Schedule
+
+  # Repository queries
+  myRepositories: [Repository!]!
+
+  # Commit queries
+  commits(scheduleId: ID!): [Commit!]!
+}
+
+type Mutation {
+  # Pattern mutations
+  createPattern(input: PatternInput!): Pattern!
+  updatePattern(id: ID!, input: PatternInput!): Pattern!
+  deletePattern(id: ID!): Boolean!
+
+  # Schedule mutations
+  createSchedule(input: ScheduleInput!): Schedule!
+  cancelSchedule(id: ID!): Schedule!
+
+  # Auth mutations
+  logout: Boolean!
+}
+
+type Subscription {
+  commitCreated(scheduleId: ID!): Commit!
+  scheduleStatusChanged(id: ID!): Schedule!
+}

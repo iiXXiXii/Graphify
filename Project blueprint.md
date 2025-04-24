@@ -104,3 +104,68 @@ Secure (OAuth, RBAC, encryption)
 User-centric (visual tools, marketplace, accessibility)
 Graphify will empower users to create, preview, and apply authentic, beautiful contribution graph patterns—securely and seamlessly, on any platform.
 
+# Project Blueprint: Graphify
+
+## Overview
+Graphify is a multi-component project designed to customize GitHub contribution graphs by generating backdated commits. It consists of:
+
+1. **CLI Tool**: A TypeScript-based command-line interface for generating commits and managing patterns.
+2. **Frontend**: An Angular-based web application for visualizing and designing contribution patterns.
+3. **Backend**: A NestJS-based server for handling authentication, scheduling, and database operations.
+
+## Architecture Diagram
+
+```
++----------------+       +----------------+       +----------------+
+|                |       |                |       |                |
+|    Frontend    | <---> |    Backend     | <---> |    Database    |
+|  (Angular)     |       |  (NestJS)      |       |  (Prisma)      |
+|                |       |                |       |                |
++----------------+       +----------------+       +----------------+
+        |                        ^
+        v                        |
++----------------+               |
+|                |               |
+|      CLI       | ---------------
+|  (TypeScript)  |
+|                |
++----------------+
+```
+
+## API Endpoints
+
+### Authentication
+- **POST /auth/github**: Initiates GitHub OAuth authentication.
+- **GET /auth/callback**: Handles the OAuth callback and retrieves the access token.
+
+### Patterns
+- **GET /patterns**: Retrieves all saved patterns.
+- **POST /patterns**: Saves a new pattern.
+- **PUT /patterns/:id**: Updates an existing pattern.
+- **DELETE /patterns/:id**: Deletes a pattern.
+
+### Commits
+- **POST /commits**: Generates backdated commits based on a pattern.
+
+## Database Schema
+The database schema is managed using Prisma. Key tables include:
+
+- **Users**: Stores user information and GitHub tokens.
+- **Patterns**: Stores contribution graph patterns.
+- **Commits**: Logs generated commits.
+
+## Contribution Patterns
+Graphify supports the following pattern types:
+
+1. **Linear**: Commits are distributed evenly over a specified period.
+2. **Custom**: Users can define specific dates and commit counts.
+3. **Randomized**: Commits are distributed randomly within a range.
+
+## Future Enhancements
+- Add support for more complex patterns (e.g., spirals, waves).
+- Integrate with GitHub Actions for automated deployment.
+- Add real-time collaboration features to the frontend.
+
+## Contribution Guidelines
+Please see `CONTRIBUTING.md` for details on how to contribute to this project.
+

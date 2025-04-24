@@ -3,8 +3,28 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "graphify-cli"
+  ],
+  "scripts": {
+    "dev:frontend": "bun run --cwd frontend start",
+    "dev:backend": "bun run --cwd backend start:dev",
+    "dev:cli": "bun run --cwd graphify-cli dev",
+    "build:frontend": "bun run --cwd frontend build",
+    "build:backend": "bun run --cwd backend build",
+    "build:cli": "bun run --cwd graphify-cli build",
+    "build": "bun run build:frontend && bun run build:backend && bun run build:cli",
+    "prisma:generate": "cd backend && bunx prisma generate",
+    "prisma:migrate": "cd backend && bunx prisma migrate dev",
+    "prisma:studio": "cd backend && bunx prisma studio",
+    "start": "bun run --cwd backend start:prod",
+    "test": "bun workspaces run test",
+    "lint": "eslint ."
+  },
   "devDependencies": {
-    "@types/bun": "latest",
+    "bun-types": "latest",
     "eslint": "^9.25.1",
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-prettier": "^5.2.6",
@@ -16,12 +36,16 @@
   "dependencies": {
     "@nestjs/passport": "^11.0.5",
     "@octokit/auth": "^3.0.3",
+    "@types/luxon": "^3.6.2",
+    "@types/rrule": "^2.1.7",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "dayjs": "^1.11.13",
     "inquirer": "^12.6.0",
+    "luxon": "^3.6.1",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
+    "rrule": "^2.8.1",
     "simple-git": "^3.27.0"
   }
 }
