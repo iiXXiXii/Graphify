@@ -1,0 +1,10 @@
+app = "graphify-backend"
+
+[build]
+  image = "node:18"
+
+[env]
+  DATABASE_URL = "${{ secrets.DATABASE_URL }}"
+
+[deploy]
+  release_command = "npm run start:prod"
