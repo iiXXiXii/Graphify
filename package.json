@@ -4,7 +4,11 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "eslint": "^9.25.1",
+    "eslint-config-prettier": "^10.1.2",
+    "eslint-plugin-prettier": "^5.2.6",
+    "prettier": "^3.5.3"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -12,7 +16,12 @@
   "dependencies": {
     "@nestjs/passport": "^11.0.5",
     "@octokit/auth": "^3.0.3",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dayjs": "^1.11.13",
+    "inquirer": "^12.6.0",
     "passport": "^0.7.0",
-    "passport-github2": "^0.1.12"
+    "passport-github2": "^0.1.12",
+    "simple-git": "^3.27.0"
   }
 }
