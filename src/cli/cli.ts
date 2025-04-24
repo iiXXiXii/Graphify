@@ -170,3 +170,7 @@ export async function runCLI(args = process.argv): Promise<void> {
     // Parse arguments
     program.parse(args);
   } catch (error) {
+    ErrorHandler.getInstance().handle(error);
+    process.exit(1);
+  }
+}
