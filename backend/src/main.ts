@@ -1,18 +1,31 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const logger = new Logger('Bootstrap');
 
-  // Enable CORS for frontend development
+  const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
+
+  // Get configuration values
+  const port = configService.get('PORT', 3000);
+  const corsOrigin = configService.get('CORS_ORIGIN', 'http://localhost:4200');
+  const nodeEnv = configService.get('NODE_ENV', 'development');
+
+  // Security setup
+  app.use(helmet());
+
+  // CORS setup
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:4200',
+    origin: corsOrigin,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
-  // Enable validation pipes
+  // Validation pipes
   app.useGlobalPipes(new ValidationPipe({
     transform: true,
     whitelist: true,
@@ -20,8 +33,8 @@ async function bootstrap() {
   }));
 
   // Start the server
-  await app.listen(3000);
-  console.log(`Application is running on: ${await app.getUrl()}`);
+  await app.listen(port);
+  logger.log(`Application is running in ${nodeEnv} mode on: ${await app.getUrl()}`);
 }
 
 bootstrap();

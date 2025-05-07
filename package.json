@@ -34,18 +34,11 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@nestjs/passport": "^11.0.5",
-    "@octokit/auth": "^3.0.3",
-    "@types/luxon": "^3.6.2",
-    "@types/rrule": "^2.1.7",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "dayjs": "^1.11.13",
     "inquirer": "^12.6.0",
     "luxon": "^3.6.1",
-    "passport": "^0.7.0",
-    "passport-github2": "^0.1.12",
-    "rrule": "^2.8.1",
     "simple-git": "^3.27.0"
   }
 }

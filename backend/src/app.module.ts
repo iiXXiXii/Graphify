@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
@@ -7,11 +7,13 @@ import { PrismaService } from './prisma.service';
 import { PatternService } from './pattern.service';
 import { ScheduleService } from './schedule.service';
 import { AuthModule } from './auth/auth.module';
+import { validateConfig } from './config/validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateConfig,
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,

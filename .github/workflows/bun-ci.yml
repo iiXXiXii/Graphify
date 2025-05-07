@@ -22,13 +22,13 @@ jobs:
       run: bun install
 
     - name: Build frontend
-      run: bun run --cwd frontend build
+      run: bun run build:frontend
 
     - name: Build backend
-      run: bun run --cwd backend build
+      run: bun run build:backend
 
     - name: Build CLI
-      run: bun run --cwd graphify-cli build
+      run: bun run build:cli
 
     - name: Run tests
       run: bun test
