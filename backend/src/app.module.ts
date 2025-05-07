@@ -8,6 +8,8 @@ import { PatternService } from './pattern.service';
 import { ScheduleService } from './schedule.service';
 import { AuthModule } from './auth/auth.module';
 import { validateConfig } from './config/validation';
+import { PatternResolver } from './resolvers/pattern.resolver';
+import { ScheduleResolver } from './resolvers/schedule.resolver';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { validateConfig } from './config/validation';
     PrismaService,
     PatternService,
     ScheduleService,
+    PatternResolver,
+    ScheduleResolver,
   ],
   exports: [
     PrismaService,
