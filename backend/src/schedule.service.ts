@@ -39,7 +39,16 @@ export class ScheduleService {
 
   async createSchedule(userId: number, patternId: number, repositories: Repository[], settings: any): Promise<Schedule> {
     try {
-      // Create the schedule record
+      // First verify the pattern exists
+      const pattern = await this.prisma.pattern.findUnique({
+        where: { id: patternId }
+      });
+
+      if (!pattern) {
+        throw new Error('Pattern not found');
+      }
+
+      // Create the schedule record after confirming pattern exists
       const schedule = await this.prisma.schedule.create({
         data: {
           userId,
@@ -51,15 +60,6 @@ export class ScheduleService {
           status: 'PENDING'
         },
       });
-
-      // Get the pattern data
-      const pattern = await this.prisma.pattern.findUnique({
-        where: { id: patternId }
-      });
-
-      if (!pattern) {
-        throw new Error('Pattern not found');
-      }
 
       // Generate the commit schedule
       const commitSchedule = await this.generateCommitSchedule(
@@ -438,19 +438,32 @@ export class ScheduleService {
 
       for (const commit of pendingCommits) {
         try {
-          // Get the repository details and user token
+          // Get the repository details and user
           const { repository } = commit;
           const user = commit.schedule.user;
-          const token = user.accessToken;
 
-          if (!token) {
-            this.logger.error(`No access token available for user ${user.id}`);
+          // Get the most recent valid GitHub token from AuthSession
+          const authSession = await this.prisma.authSession.findFirst({
+            where: {
+              userId: user.id,
+              provider: 'github',
+              expiresAt: { gt: new Date() } // Only get valid tokens
+            },
+            orderBy: {
+              createdAt: 'desc' // Get the most recent session
+            }
+          });
+
+          if (!authSession) {
+            this.logger.error(`No valid GitHub token found for user ${user.id}`);
             await this.prisma.commit.update({
               where: { id: commit.id },
               data: { status: 'FAILED' }
             });
             continue;
           }
+
+          const token = authSession.accessToken;
 
           // Extract owner and repo from repository fullName (format: owner/repo)
           const [owner, repo] = repository.fullName.split('/');
@@ -533,7 +546,7 @@ export class ScheduleService {
             repo,
             ref: `heads/${defaultBranch}`,
             sha: newCommit.sha,
-            force: true
+            expected_old_oid: latestCommitSha // Safer approach: only update if branch hasn't changed
           });
 
           // Mark the commit as completed in our database
