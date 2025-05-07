@@ -26,11 +26,36 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     this.logger.log('Disconnected from database');
   }
 
-  // Helper method to clean the database during testing
-  async cleanDatabase() {
-    if (this.configService.get('NODE_ENV') === 'test') {
-      this.logger.log('Cleaning test database...');
+  // Helper method to clean the database during testing - with enhanced safety checks
+  async cleanDatabase(confirmationCode?: string) {
+    const nodeEnv = this.configService.get('NODE_ENV');
+    const databaseUrl = this.configService.get('DATABASE_URL') || '';
 
+    // Triple check to ensure we're in a test environment:
+    // 1. NODE_ENV must be 'test'
+    // 2. DATABASE_URL must include 'test' or end with '_test'
+    // 3. Confirmation code must match "CONFIRM_CLEAN_TEST_DB" if provided
+
+    const isTestDatabase = databaseUrl.includes('test') || databaseUrl.endsWith('_test');
+
+    if (nodeEnv !== 'test') {
+      this.logger.error('Database clean rejected: Not in test environment');
+      throw new Error('Database cleaning is only allowed in test environments');
+    }
+
+    if (!isTestDatabase) {
+      this.logger.error('Database clean rejected: URL does not indicate test database');
+      throw new Error('Database URL does not appear to be a test database');
+    }
+
+    if (confirmationCode && confirmationCode !== 'CONFIRM_CLEAN_TEST_DB') {
+      this.logger.error('Database clean rejected: Invalid confirmation code');
+      throw new Error('Invalid confirmation code for test database cleaning');
+    }
+
+    this.logger.log('Cleaning test database...');
+
+    try {
       // Get all table names
       const tables = await this.$queryRaw`
         SELECT tablename FROM pg_tables
@@ -48,9 +73,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         await tx.$executeRawUnsafe('SET session_replication_role = "origin";');
       });
 
-      this.logger.log('Test database cleaned');
-    } else {
-      this.logger.warn('Database clean attempted outside of test environment - operation aborted');
+      this.logger.log('Test database cleaned successfully');
+    } catch (error) {
+      this.logger.error(`Error cleaning test database: ${error.message}`);
+      throw new Error(`Failed to clean test database: ${error.message}`);
     }
   }
 }

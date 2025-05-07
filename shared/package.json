@@ -1,0 +1,22 @@
+{
+  "name": "@graphify/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for Graphify backend and CLI",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist",
+    "dev": "bun --watch ./src/index.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "luxon": "^3.6.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.6.2",
+    "bun-types": "latest",
+    "typescript": "^5.8.3"
+  }
+}

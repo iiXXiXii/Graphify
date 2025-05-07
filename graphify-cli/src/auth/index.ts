@@ -9,10 +9,7 @@ import { ConfigService } from '../config/config.service';
 // Path for storing auth configuration
 const CONFIG_DIR = path.join(os.homedir(), '.graphify');
 const TOKEN_FILE = path.join(CONFIG_DIR, 'auth.json');
-
-// In-memory token storage - this won't persist across sessions
-// Only used when encryption isn't possible
-let inMemoryToken: string | null = null;
+const DEVICE_KEY_FILE = path.join(CONFIG_DIR, 'device.key');
 
 interface AuthData {
   accessToken: string;
@@ -23,10 +20,44 @@ interface AuthData {
 }
 
 /**
+ * Get or generate a secure encryption key
+ */
+async function getEncryptionKey(configService: ConfigService): Promise<string> {
+  // First check environment variable
+  const envKey = configService.get('GRAPHIFY_ENCRYPTION_KEY');
+  if (envKey) {
+    return envKey;
+  }
+
+  // Then try to load from device-specific key file
+  try {
+    await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+
+    try {
+      // Check if key file exists
+      await fs.access(DEVICE_KEY_FILE);
+      // If it exists, read and return it
+      return await fs.readFile(DEVICE_KEY_FILE, { encoding: 'utf8' });
+    } catch {
+      // If key file doesn't exist, generate a secure random key
+      const newKey = crypto.randomBytes(32).toString('hex');
+      // Save the key with secure permissions
+      await fs.writeFile(DEVICE_KEY_FILE, newKey, { mode: 0o600 });
+      return newKey;
+    }
+  } catch (error) {
+    console.error(chalk.yellow('Warning: Could not generate or read secure key file.'));
+    throw new Error('Failed to secure authentication tokens. Set GRAPHIFY_ENCRYPTION_KEY environment variable.');
+  }
+}
+
+/**
  * Encrypt sensitive data
  */
-function encrypt(text: string, encryptionKey: string): { iv: string, content: string } {
+async function encrypt(text: string, configService: ConfigService): Promise<{ iv: string, content: string }> {
   try {
+    const encryptionKey = await getEncryptionKey(configService);
+
     // Create a unique initialization vector for each encryption
     const iv = crypto.randomBytes(16);
     // Create a cipher using our encryption key and IV
@@ -45,16 +76,18 @@ function encrypt(text: string, encryptionKey: string): { iv: string, content: st
       content: encrypted
     };
   } catch (error) {
-    console.error('Encryption failed, falling back to in-memory storage');
-    return { iv: '', content: '' };
+    console.error(chalk.red('Encryption failed:'), error.message);
+    throw new Error('Failed to secure authentication data. Please check your configuration.');
   }
 }
 
 /**
  * Decrypt sensitive data
  */
-function decrypt(encrypted: { iv: string, content: string }, encryptionKey: string): string {
+async function decrypt(encrypted: { iv: string, content: string }, configService: ConfigService): Promise<string> {
   try {
+    const encryptionKey = await getEncryptionKey(configService);
+
     const iv = Buffer.from(encrypted.iv, 'hex');
     const decipher = crypto.createDecipheriv(
       'aes-256-cbc',
@@ -67,7 +100,6 @@ function decrypt(encrypted: { iv: string, content: string }, encryptionKey: stri
 
     return decrypted;
   } catch (error) {
-    console.error('Decryption failed');
     throw new Error('Failed to decrypt authentication token. You may need to log in again.');
   }
 }
@@ -75,38 +107,32 @@ function decrypt(encrypted: { iv: string, content: string }, encryptionKey: stri
 /**
  * Save auth data securely to file
  */
-async function saveAuthData(authData: AuthData, encryptionKey: string): Promise<boolean> {
+export async function saveAuthData(authData: AuthData): Promise<void> {
+  const configService = new ConfigService();
+
   try {
     // Ensure config directory exists
     await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 }); // Set secure permissions
 
     // Encrypt the token data
-    const encryptedData = encrypt(JSON.stringify(authData), encryptionKey);
-
-    // If encryption failed, store in memory only
-    if (!encryptedData.iv) {
-      inMemoryToken = authData.accessToken;
-      return false;
-    }
+    const encryptedData = await encrypt(JSON.stringify(authData), configService);
 
     // Write to file
     await fs.writeFile(TOKEN_FILE, JSON.stringify(encryptedData), {
       encoding: 'utf8',
       mode: 0o600 // Read/write for user only
     });
-
-    return true;
   } catch (error) {
-    console.error('Failed to save auth data to disk');
-    inMemoryToken = authData.accessToken;
-    return false;
+    throw new Error(`Failed to save authentication data: ${error.message}`);
   }
 }
 
 /**
  * Load auth data from secure storage
  */
-async function loadAuthData(encryptionKey: string): Promise<AuthData | null> {
+export async function loadAuthData(): Promise<AuthData | null> {
+  const configService = new ConfigService();
+
   try {
     try {
       await fs.access(TOKEN_FILE);
@@ -115,10 +141,10 @@ async function loadAuthData(encryptionKey: string): Promise<AuthData | null> {
     }
 
     const encryptedData = JSON.parse(await fs.readFile(TOKEN_FILE, 'utf8'));
-    const decrypted = decrypt(encryptedData, encryptionKey);
+    const decrypted = await decrypt(encryptedData, configService);
     return JSON.parse(decrypted);
   } catch (error) {
-    console.error('Failed to load auth data from disk');
+    console.error(chalk.yellow('Failed to load auth data:'), error.message);
     return null;
   }
 }
@@ -137,26 +163,18 @@ function isTokenExpired(authData: AuthData): boolean {
  * Get a valid auth token, refreshing if necessary
  */
 export async function getAuthToken(): Promise<string> {
-  const config = new ConfigService();
-  const encryptionKey = config.get('GRAPHIFY_ENCRYPTION_KEY') || 'default-encryption-key';
-
-  // Check in-memory token first
-  if (inMemoryToken) {
-    return inMemoryToken;
-  }
-
   // Try to load from file
-  const authData = await loadAuthData(encryptionKey);
+  const authData = await loadAuthData();
 
   if (!authData) {
-    throw new Error('Not authenticated. Please log in first using "graphify auth".');
+    throw new Error('Not authenticated. Please log in first using "graphify auth login".');
   }
 
   // Check if token has expired
   if (isTokenExpired(authData) && authData.refreshToken) {
     // Refresh the token (would require implementation)
     // For now, we'll just force a new login
-    throw new Error('Authentication expired. Please log in again using "graphify auth".');
+    throw new Error('Authentication expired. Please log in again using "graphify auth login".');
   }
 
   return authData.accessToken;
@@ -166,16 +184,15 @@ export async function getAuthToken(): Promise<string> {
  * Authenticate with GitHub using device flow
  */
 export async function authenticateWithGitHub(): Promise<void> {
-  const config = new ConfigService();
-  const clientId = config.get('GITHUB_CLIENT_ID');
-  const encryptionKey = config.get('GRAPHIFY_ENCRYPTION_KEY') || 'default-encryption-key';
+  const configService = new ConfigService();
+  const clientId = configService.get('GITHUB_CLIENT_ID');
 
   // Check for required environment variables
   if (!clientId) {
     throw new Error('GitHub Client ID is not set. Please set GITHUB_CLIENT_ID environment variable.');
   }
 
-  console.log('Starting GitHub authentication...');
+  console.log(chalk.blue('Starting GitHub authentication...'));
 
   // Create OAuth device auth flow
   const auth = createOAuthDeviceAuth({
@@ -184,8 +201,8 @@ export async function authenticateWithGitHub(): Promise<void> {
     scopes: ['repo'], // Request minimal permissions needed
     onVerification: ({ verification_uri, user_code }) => {
       console.log('\nComplete your authentication in your browser:');
-      console.log(`1. Open: ${verification_uri}`);
-      console.log(`2. Enter code: ${user_code}`);
+      console.log(`1. Open: ${chalk.blue(verification_uri)}`);
+      console.log(`2. Enter code: ${chalk.green(user_code)}`);
       console.log('\nWaiting for authentication...');
     },
   });
@@ -202,18 +219,17 @@ export async function authenticateWithGitHub(): Promise<void> {
     };
 
     // Save token securely
-    const savedToFile = await saveAuthData(authData, encryptionKey);
+    await saveAuthData(authData);
 
-    console.log('\nAuthentication successful!');
-    if (savedToFile) {
-      console.log(`Token securely stored in ${TOKEN_FILE}`);
-    } else {
-      console.log('Token stored in memory only. It will be lost when you close this program.');
-    }
+    // Get and save username
+    await getUserInfo();
+
+    console.log(chalk.green('\n✓ Authentication successful!'));
+    console.log(`Token securely stored in ${TOKEN_FILE}`);
 
     return;
   } catch (error) {
-    console.error('\nAuthentication failed:', error.message);
+    console.error(chalk.red('\nAuthentication failed:'), error.message);
     throw new Error(`GitHub authentication failed: ${error.message}`);
   }
 }
@@ -222,10 +238,6 @@ export async function authenticateWithGitHub(): Promise<void> {
  * Get location where auth token is stored
  */
 export function getStorageLocation(): string {
-  if (inMemoryToken) {
-    return 'in-memory (temporary)';
-  }
-
   return TOKEN_FILE;
 }
 
@@ -234,9 +246,6 @@ export function getStorageLocation(): string {
  */
 export async function logout(): Promise<void> {
   try {
-    // Clear in-memory token
-    inMemoryToken = null;
-
     // Delete token file if it exists
     try {
       await fs.access(TOKEN_FILE);
@@ -245,7 +254,7 @@ export async function logout(): Promise<void> {
       // File doesn't exist, nothing to do
     }
 
-    console.log('Successfully logged out from GitHub.');
+    console.log(chalk.green('Successfully logged out from GitHub.'));
   } catch (error) {
     console.error('Error during logout:', error.message);
     throw new Error(`Logout failed: ${error.message}`);
@@ -257,8 +266,8 @@ export async function logout(): Promise<void> {
  */
 export async function isAuthenticated(): Promise<boolean> {
   try {
-    await getAuthToken();
-    return true;
+    const authData = await loadAuthData();
+    return !!authData && !!authData.accessToken;
   } catch {
     return false;
   }
@@ -269,17 +278,14 @@ export async function isAuthenticated(): Promise<boolean> {
  */
 export async function getUserInfo(): Promise<{ username: string } | null> {
   try {
-    const config = new ConfigService();
-    const encryptionKey = config.get('GRAPHIFY_ENCRYPTION_KEY') || 'default-encryption-key';
-
-    const authData = await loadAuthData(encryptionKey);
+    const authData = await loadAuthData();
     if (!authData) {
       return null;
     }
 
     // If we don't have username stored yet, we need to fetch it from GitHub
     if (!authData.username) {
-      const token = await getAuthToken();
+      const token = authData.accessToken;
       const response = await fetch('https://api.github.com/user', {
         headers: {
           'Authorization': `token ${token}`,
@@ -293,7 +299,7 @@ export async function getUserInfo(): Promise<{ username: string } | null> {
 
         // Update stored auth data with username
         authData.username = data.login;
-        await saveAuthData(authData, encryptionKey);
+        await saveAuthData(authData);
 
         return { username: data.login };
       }
@@ -303,7 +309,7 @@ export async function getUserInfo(): Promise<{ username: string } | null> {
 
     return { username: authData.username };
   } catch (error) {
-    console.error('Error getting user info:', error.message);
+    console.error(chalk.red('Error getting user info:'), error.message);
     return null;
   }
 }

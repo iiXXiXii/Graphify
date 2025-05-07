@@ -2,12 +2,12 @@
   "name": "frontend",
   "version": "0.0.0",
   "scripts": {
-    "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test",
-    "serve:ssr:frontend": "node dist/frontend/server/server.mjs"
+    "ng": "bunx ng",
+    "start": "bunx ng serve",
+    "build": "bunx ng build",
+    "watch": "bunx ng build --watch --configuration development",
+    "test": "bunx ng test",
+    "serve:ssr:frontend": "bun dist/frontend/server/server.mjs"
   },
   "private": true,
   "dependencies": {
