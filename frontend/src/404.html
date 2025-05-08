@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Graphify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    // Redirect to the index.html with the URL parameters
+    const path = window.location.pathname.slice(1).replace('/Graphify', '');
+    const search = window.location.search;
+    const newUrl = '/Graphify/index.html' + (path ? '/' + path : '') + search;
+    window.location.replace(newUrl);
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>

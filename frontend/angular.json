@@ -5,7 +5,7 @@
   "projects": {
     "frontend": {
       "projectType": "application",
-      "schematics": {},
+      "schematics": { },
       "root": "",
       "sourceRoot": "src",
       "prefix": "app",
@@ -24,14 +24,18 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "404.html",
+                "input": "src",
+                "output": "/"
               }
             ],
             "styles": [
               "src/styles.css"
             ],
-            "scripts": [],
+            "scripts": [ ],
             "server": "src/main.server.ts",
-            "outputMode": "server",
             "ssr": {
               "entry": "src/server.ts"
             }
@@ -50,12 +54,21 @@
                   "maximumError": "8kB"
                 }
               ],
-              "outputHashing": "all"
+              "outputHashing": "all",
+              "baseHref": "/Graphify/",
+              "outputMode": "static"
             },
             "development": {
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "github-pages": {
+              "outputHashing": "all",
+              "baseHref": "/Graphify/",
+              "optimization": true,
+              "outputPath": "docs",
+              "outputMode": "static"
             }
           },
           "defaultConfiguration": "production"
@@ -92,7 +105,7 @@
             "styles": [
               "src/styles.css"
             ],
-            "scripts": []
+            "scripts": [ ]
           }
         }
       }
