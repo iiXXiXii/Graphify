@@ -1,10 +1,14 @@
 import { Command } from 'commander';
 import * as path from 'path';
 import chalk from 'chalk';
-import * as inquirer from 'inquirer';
+import inquirer from 'inquirer';
 import { promises as fs } from 'fs';
-import { validatePattern } from '../utils/pattern-utils.js';
-import type { ContributionPattern } from '../utils/pattern-utils.js';
+import { validatePattern } from '../../../shared/src/utils/pattern-utils.js';
+
+/**
+ * Type definition for contribution pattern grid
+ */
+export type ContributionPattern = (0 | 1 | 2 | 3 | 4)[][];
 
 /**
  * Supported file formats for pattern import
@@ -65,7 +69,8 @@ export function setupImportCommand(program: Command): void {
         // Save pattern if output path provided or ask user
         await handlePatternSaving(pattern, options.output, options.file);
       } catch (error: unknown) {
-        console.error(chalk.red('Import error:'), error instanceof Error ? error.message : String(error));
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red('Import error:'), errorMessage);
         process.exit(1);
       }
     });
@@ -78,9 +83,8 @@ export function setupImportCommand(program: Command): void {
  * @returns The determined format
  */
 function determineFormatFromFilename(filename: string): ImportFormat {
-  const extension = path.extname(filename).toLowerCase();
-
-  switch (extension) {
+  const ext = path.extname(filename).toLowerCase();
+  switch (ext) {
     case '.json':
       return 'json';
     case '.csv':
@@ -88,7 +92,8 @@ function determineFormatFromFilename(filename: string): ImportFormat {
     case '.txt':
       return 'txt';
     default:
-      return 'json'; // Default to JSON
+      console.log(chalk.yellow(`Unknown file extension ${ext}, defaulting to JSON format`));
+      return 'json';
   }
 }
 
@@ -100,15 +105,9 @@ function determineFormatFromFilename(filename: string): ImportFormat {
  */
 async function validateFileExists(filePath: string): Promise<void> {
   try {
-    const stats = await fs.stat(filePath);
-    if (!stats.isFile()) {
-      throw new Error(`Not a file: ${filePath}`);
-    }
+    await fs.access(filePath);
   } catch (error: unknown) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      throw new Error(`File not found: ${filePath}`);
-    }
-    throw error;
+    throw new Error(`File not found or inaccessible: ${filePath}`);
   }
 }
 
@@ -160,7 +159,7 @@ async function importPattern(
       );
 
       if (hasCriticalIssues && !force) {
-        const { proceed } = await (inquirer as any).prompt({
+        const { proceed } = await inquirer.prompt({
           type: 'confirm',
           name: 'proceed',
           message: 'Pattern has validation issues. Continue anyway?',
@@ -395,7 +394,7 @@ function normalizePatternValues(pattern: number[][]): ContributionPattern {
  */
 function showPatternInfo(pattern: ContributionPattern, _sourcePath: string): void {
   const rows = pattern.length;
-  const cols = pattern[0]?.length || 0;
+  const cols = pattern[0]?.length || 0;  // Add null check with optional chaining
 
   console.log(chalk.green('✓ Pattern imported successfully'));
   console.log(`Dimensions: ${rows} rows × ${cols} columns`);
@@ -428,13 +427,14 @@ function showPatternInfo(pattern: ContributionPattern, _sourcePath: string): voi
  * @returns Map of intensity levels to counts
  */
 function countIntensities(pattern: ContributionPattern): Record<number, number> {
-  const counts: Record<number, number> = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0};
+  const counts: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
 
-  pattern.forEach((row: number[]) => {
-    row.forEach((cell: number) => {
-      counts[cell] = (counts[cell] || 0) + 1;
-    });
-  });
+  for (const row of pattern) {
+    for (const cell of row) {
+      const value = Math.min(4, Math.max(0, cell)); // Ensure value is 0-4
+      counts[value]++;
+    }
+  }
 
   return counts;
 }
@@ -501,7 +501,7 @@ async function handlePatternSaving(
     await savePattern(pattern, outputPath, sourcePath);
   } else {
     // Ask if user wants to save the pattern
-    const { shouldSave } = await (inquirer as any).prompt({
+    const { shouldSave } = await inquirer.prompt({
       type: 'confirm',
       name: 'shouldSave',
       message: 'Would you like to save this pattern?',
@@ -509,13 +509,12 @@ async function handlePatternSaving(
     });
 
     if (shouldSave) {
-      const { outputPath: userOutputPath } = await (inquirer as any).prompt({
+      const { outputPath: userOutputPath } = await inquirer.prompt({
         type: 'input',
         name: 'outputPath',
         message: 'Enter the path to save the pattern:',
         default: 'pattern.json',
       });
-
       await savePattern(pattern, userOutputPath, sourcePath);
     }
   }

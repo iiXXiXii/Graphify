@@ -42,13 +42,16 @@ export async function executeGitOperations(
         );
       } finally {
         // Clean up the temporary file
-        await fs.unlink(tempFile).catch(() => {
+        try {
+          await fs.unlink(tempFile);
+        } catch (error) {
           // Ignore cleanup errors
-        });
+        }
       }
     }
-  } catch (error) {
-    throw new Error(`Failed to create commit: ${error.message}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to create commit: ${errorMessage}`);
   }
 }
 
@@ -137,13 +140,15 @@ export async function pushToGitHub(branch: string = 'main'): Promise<void> {
     await execGitCommand(`git push origin ${branch} --quiet`);
 
     console.log(chalk.green('✓ Successfully pushed commits to GitHub'));
-  } catch (error) {
-    if (error.message.includes('Authentication failed')) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (errorMessage.includes('Authentication failed')) {
       throw new Error(
         'GitHub authentication failed. Please check your credentials or authenticate with "graphify auth".'
       );
     }
-    throw new Error(`Failed to push to GitHub: ${error.message}`);
+    throw new Error(`Failed to push to GitHub: ${errorMessage}`);
   }
 }
 
@@ -208,23 +213,32 @@ async function execGitCommand(command: string): Promise<{ stdout: string; stderr
   try {
     const result = await execAsync(command);
     return result;
-  } catch (error) {
-    // Extract useful information from the error
-    const errorMsg = error.stderr || error.message || 'Unknown Git error';
+  } catch (error: unknown) {
+    // Handle different error types
+    if (error && typeof error === 'object') {
+      const typedError = error as { stderr?: string; stdout?: string; message?: string };
+      // Extract useful information from the error
+      const errorMsg = typedError.stderr || typedError.message || 'Unknown Git error';
 
-    // Enhance error messages for common Git errors
-    if (errorMsg.includes('not a git repository')) {
-      throw new Error('Not in a git repository. Please run "git init" first.');
-    }
-    if (errorMsg.includes('Authentication failed')) {
-      throw new Error('GitHub authentication failed. Try running "graphify auth" first.');
-    }
-    if (errorMsg.includes('Permission denied')) {
-      throw new Error('Permission denied. Check your GitHub access rights.');
+      // Enhance error messages for common Git errors
+      if (typeof errorMsg === 'string') {
+        if (errorMsg.includes('not a git repository')) {
+          throw new Error('Not in a git repository. Please run "git init" first.');
+        }
+        if (errorMsg.includes('Authentication failed')) {
+          throw new Error('GitHub authentication failed. Try running "graphify auth" first.');
+        }
+        if (errorMsg.includes('Permission denied')) {
+          throw new Error('Permission denied. Check your GitHub access rights.');
+        }
+
+        // Generic error
+        throw new Error(`Git error: ${errorMsg.trim()}`);
+      }
     }
 
-    // Generic error
-    throw new Error(`Git error: ${errorMsg.trim()}`);
+    // Fallback error handling
+    throw new Error('An unknown Git error occurred');
   }
 }
 
@@ -234,4 +248,40 @@ async function execGitCommand(command: string): Promise<{ stdout: string; stderr
 function escapeShellArg(arg: string): string {
   // Replace double quotes with escaped double quotes
   return arg.replace(/"/g, '\\"');
+}
+
+// Fix CommitOptions property access and add proper error handling
+async function createCommit(options?: CommitOptions): Promise<void> {
+  try {
+    // Set environment variables for backdating
+    if (options && options.date) {
+      process.env.GIT_AUTHOR_DATE = options.date.toISOString();
+      process.env.GIT_COMMITTER_DATE = options.date.toISOString();
+    }
+
+    const args = ['commit'];
+
+    // Add message if provided
+    if (options && options.message) {
+      args.push('-m', options.message);
+    } else {
+      args.push('-m', 'Update documentation');
+    }
+
+    // Handle empty commits
+    if (options && options.createEmptyCommit) {
+      args.push('--allow-empty');
+    }
+
+    // Execute the commit command
+    await execCmd('git', args);
+  } catch (error: unknown) {
+    // Proper error handling with type checking
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Git commit failed: ${errorMessage}`);
+  } finally {
+    // Clean up environment variables
+    delete process.env.GIT_AUTHOR_DATE;
+    delete process.env.GIT_COMMITTER_DATE;
+  }
 }

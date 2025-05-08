@@ -17,7 +17,9 @@ export class ConfigService {
 
     // Override with environment variables
     for (const key in process.env) {
-      this.envConfig[key] = process.env[key] || '';
+      if (process.env[key] !== undefined) {
+        this.envConfig[key] = process.env[key] || '';
+      }
     }
   }
 
@@ -28,3 +30,6 @@ export class ConfigService {
     return this.envConfig[key] || defaultValue || '';
   }
 }
+
+// Add default export for dynamic import compatibility
+export default ConfigService;

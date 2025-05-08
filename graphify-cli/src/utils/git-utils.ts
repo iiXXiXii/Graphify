@@ -47,8 +47,9 @@ export async function executeGitOperations(
         });
       }
     }
-  } catch (error) {
-    throw new Error(`Failed to create commit: ${error.message}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to create commit: ${errorMessage}`);
   }
 }
 
@@ -89,9 +90,10 @@ export async function executeScheduledCommits(
       // Execute the commit
       await executeGitOperations(date, message, createEmptyCommit);
       successCount++;
-    } catch (error) {
+    } catch (error: unknown) {
       failureCount++;
-      errors.push(`Commit ${i + 1}: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      errors.push(`Commit ${i + 1}: ${errorMessage}`);
 
       // Don't flood the console with errors
       if (errors.length === 5 && sortedCommits.length > 10) {
@@ -137,13 +139,14 @@ export async function pushToGitHub(branch: string = 'main'): Promise<void> {
     await execGitCommand(`git push origin ${branch} --quiet`);
 
     console.log(chalk.green('✓ Successfully pushed commits to GitHub'));
-  } catch (error) {
-    if (error.message.includes('Authentication failed')) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('Authentication failed')) {
       throw new Error(
         'GitHub authentication failed. Please check your credentials or authenticate with "graphify auth".'
       );
     }
-    throw new Error(`Failed to push to GitHub: ${error.message}`);
+    throw new Error(`Failed to push to GitHub: ${errorMessage}`);
   }
 }
 
@@ -153,7 +156,8 @@ export async function pushToGitHub(branch: string = 'main'): Promise<void> {
 async function checkGitRepository(): Promise<void> {
   try {
     await execGitCommand('git rev-parse --is-inside-work-tree');
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(
       'Not a git repository. Please run "git init" first or navigate to a valid git repository.'
     );
@@ -162,7 +166,7 @@ async function checkGitRepository(): Promise<void> {
   // Also check that the repo has at least one commit
   try {
     await execGitCommand('git rev-parse HEAD');
-  } catch (error) {
+  } catch (error: unknown) {
     // No commits yet, suggest creating an initial commit
     throw new Error(
       'Git repository has no commits. Please create an initial commit first with: git commit --allow-empty -m "Initial commit"'
@@ -192,30 +196,41 @@ async function createTempFile(): Promise<string> {
   return filePath;
 }
 
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+}
+
 /**
  * Execute a Git command with error handling
  */
-async function execGitCommand(command: string): Promise<{ stdout: string; stderr: string }> {
+async function execGitCommand(command: string): Promise<ExecResult> {
   try {
     const result = await execAsync(command);
     return result;
-  } catch (error) {
+  } catch (error: unknown) {
     // Extract useful information from the error
-    const errorMsg = error.stderr || error.message || 'Unknown Git error';
+    if (error && typeof error === 'object' && 'stderr' in error) {
+      const gitError = error as { stderr?: string, message?: string };
+      const errorMsg = gitError.stderr || gitError.message || 'Unknown Git error';
 
-    // Enhance error messages for common Git errors
-    if (errorMsg.includes('not a git repository')) {
-      throw new Error('Not in a git repository. Please run "git init" first.');
-    }
-    if (errorMsg.includes('Authentication failed')) {
-      throw new Error('GitHub authentication failed. Try running "graphify auth" first.');
-    }
-    if (errorMsg.includes('Permission denied')) {
-      throw new Error('Permission denied. Check your GitHub access rights.');
+      // Enhance error messages for common Git errors
+      if (errorMsg.includes('not a git repository')) {
+        throw new Error('Not in a git repository. Please run "git init" first.');
+      }
+      if (errorMsg.includes('Authentication failed')) {
+        throw new Error('GitHub authentication failed. Try running "graphify auth" first.');
+      }
+      if (errorMsg.includes('Permission denied')) {
+        throw new Error('Permission denied. Check your GitHub access rights.');
+      }
+
+      // Generic error
+      throw new Error(`Git error: ${errorMsg.trim()}`);
     }
 
-    // Generic error
-    throw new Error(`Git error: ${errorMsg.trim()}`);
+    // Fallback error handling
+    throw new Error(`Git command failed: ${String(error)}`);
   }
 }
 
@@ -225,4 +240,41 @@ async function execGitCommand(command: string): Promise<{ stdout: string; stderr
 function escapeShellArg(arg: string): string {
   // Replace double quotes with escaped double quotes
   return arg.replace(/"/g, '\\"');
+}
+
+// Fix the type errors with CommitOptions properties
+export async function createCommit(options?: CommitOptions): Promise<void> {
+  const { execCmd } = await import('./commandExecutor.js');
+
+  try {
+    // Set environment variables for backdating
+    if (options && options.date) {
+      process.env.GIT_AUTHOR_DATE = options.date.toISOString();
+      process.env.GIT_COMMITTER_DATE = options.date.toISOString();
+    }
+
+    const args = ['commit'];
+
+    // Add message if provided
+    if (options && options.message) {
+      args.push('-m', options.message);
+    } else {
+      args.push('-m', 'Update documentation');
+    }
+
+    // Handle empty commits
+    if (options && options.createEmptyCommit) {
+      args.push('--allow-empty');
+    }
+
+    // Execute the commit command
+    await execCmd('git', args);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error during git commit';
+    throw new Error(`Git commit failed: ${errorMessage}`);
+  } finally {
+    // Clean up environment variables
+    delete process.env.GIT_AUTHOR_DATE;
+    delete process.env.GIT_COMMITTER_DATE;
+  }
 }

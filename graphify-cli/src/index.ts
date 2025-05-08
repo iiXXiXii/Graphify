@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { setupAuthCommand } from './commands/auth-command';
-import { setupPatternCommand } from './commands/pattern-command';
-import { setupCommitCommand } from './commands/commit-command';
-import { setupImportCommand } from './commands/import-command';
+import { initAuthCommands } from './commands/auth-command.js';
+import { setupPatternCommand } from './commands/pattern-command.js';
+import { setupCommitCommand } from './commands/commit-command.js';
+import { setupImportCommand } from './commands/import-command.js';
 
 // Create the main CLI program
 const program = new Command();
@@ -16,7 +16,7 @@ program
   .version('1.0.0');
 
 // Register commands
-setupAuthCommand(program);
+initAuthCommands(program);
 setupPatternCommand(program);
 setupCommitCommand(program);
 setupImportCommand(program);

@@ -1,14 +1,14 @@
 import { Command } from 'commander';
 import { promises as fs } from 'fs';
-import * as inquirer from 'inquirer';
+import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { isAuthenticated } from '../auth';
-// Import from shared module instead of local implementation
-import { validateDateInput, formatDate, adjustDateForAuthenticity } from '../../../shared/src/utils/date-utils';
-import { executeScheduledCommits, pushToGitHub } from '../utils/git-utils';
-// Import from shared module instead of local implementation
-import { validatePattern } from '../../../shared/src/utils/pattern-utils';
-import { mapPatternToSchedule, checkScheduleAuthenticity } from '../utils/scheduler';
+import { isAuthenticated } from '../auth/index.js';
+// Import from shared module with explicit file extensions
+import { validateDateInput, formatDate, adjustDateForAuthenticity } from '../../../shared/src/utils/date-utils.js';
+import { executeScheduledCommits, pushToGitHub } from '../utils/git-utils.js';
+// Import from shared module with explicit file extensions
+import { validatePattern } from '../../../shared/src/utils/pattern-utils.js';
+import { mapPatternToSchedule, checkScheduleAuthenticity } from '../utils/scheduler.js';
 
 export function setupCommitCommand(program: Command): void {
   const commitCommand = program
@@ -41,7 +41,7 @@ export function setupCommitCommand(program: Command): void {
 
           if (shouldAuth) {
             // Import dynamically to avoid circular dependency
-            const { authenticateWithGitHub } = await import('../auth');
+            const { authenticateWithGitHub } = await import('../auth/index.js');
             await authenticateWithGitHub();
           } else {
             console.log(chalk.yellow('⚠ Continuing without authentication. Some features may be limited.'));
@@ -65,8 +65,9 @@ export function setupCommitCommand(program: Command): void {
             } else {
               throw new Error('Invalid pattern format. Expected 2D array or object with pattern property.');
             }
-          } catch (error) {
-            console.error(chalk.red('Failed to load pattern file:'), error.message);
+          } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(chalk.red('Failed to load pattern file:'), errorMessage);
 
             const { createNew } = await inquirer.prompt({
               type: 'confirm',
@@ -154,9 +155,9 @@ export function setupCommitCommand(program: Command): void {
 
         // Display preview
         console.log(chalk.blue('\n📅 Commit Schedule Preview:'));
-        console.log(`Total commits: ${chalk.bold(scheduledCommits.length)}`);
+        console.log(`Total commits: ${chalk.bold(scheduledCommits.length.toString())}`);
         console.log(`Date range: ${chalk.bold(formatDate(startDate))} to ${chalk.bold(formatDate(endDate))}`);
-        console.log(`Density factor: ${chalk.bold(density)}`);
+        console.log(`Density factor: ${chalk.bold(density.toString())}`);
 
         // Show sample of commits
         const sampleSize = Math.min(5, scheduledCommits.length);
@@ -208,110 +209,171 @@ export function setupCommitCommand(program: Command): void {
         if (options.push) {
           try {
             await pushToGitHub();
-          } catch (error) {
-            console.error(chalk.red('Failed to push commits:'), error.message);
+          } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(chalk.red('Failed to push commits:'), errorMessage);
             console.log(chalk.yellow('You can push manually using: git push'));
           }
         }
-      } catch (error) {
-        console.error(chalk.red('Error:'), error.message);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red('Error:'), errorMessage);
         process.exit(1);
       }
     });
 }
 
-async function promptForPattern(): Promise<number[][]> {
-  const { patternType } = await inquirer.prompt({
-    type: 'list',
-    name: 'patternType',
-    message: 'Choose a pattern type:',
-    choices: [
-      { name: 'Simple (one intensity level)', value: 'simple' },
-      { name: 'Custom grid (multiple intensity levels)', value: 'custom' }
-    ]
-  });
+// Fix the undefined access in commit scheduling
+async function scheduleCommits(
+  pattern: number[][],
+  startDate: string,
+  endDate: string | null = null,
+  options: any = {}
+): Promise<void> {
+  const {
+    message = 'Update documentation',
+    emptyCommits = true,
+    commitMultiplier = 1
+  } = options;
 
-  if (patternType === 'simple') {
-    const { rows, columns } = await inquirer.prompt([
-      {
-        type: 'number',
-        name: 'rows',
-        message: 'Number of rows:',
-        default: 5
-      },
-      {
-        type: 'number',
-        name: 'columns',
-        message: 'Number of columns:',
-        default: 7
+  try {
+    // Validate dates
+    const { start, end } = calculateDateRange(
+      startDate,
+      endDate,
+      pattern.length * (pattern[0]?.length || 0) / 7
+    );
+
+    console.log(`Creating commits from ${start.toDateString()} to ${end.toDateString()}`);
+
+    // Generate schedule based on the pattern
+    const schedule = await generateCommitSchedule(pattern, start, end, {
+      commitMultiplier,
+      emptyCommits
+    });
+
+    // Show summary and confirm
+    const totalCommits = schedule.length;
+    console.log(`Total commits to be created: ${totalCommits}`);
+
+    if (totalCommits === 0) {
+      console.log(chalk.yellow('No commits to create. Try adjusting your pattern or date range.'));
+      return;
+    }
+
+    const { confirm } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'confirm',
+      message: `Create ${totalCommits} commits?`,
+      default: false
+    });
+
+    if (!confirm) {
+      console.log(chalk.yellow('Commit creation cancelled.'));
+      return;
+    }
+
+    // Create the commits
+    for (let i = 0; i < schedule.length; i++) {
+      const commit = schedule[i];
+      if (commit) { // Add null check here
+        const { date, message: commitMessage, createEmptyCommit } = commit;
+        await executeGitOperations(date, commitMessage, createEmptyCommit);
+        process.stdout.write(`\rProcessing commits: ${i + 1}/${schedule.length} (${Math.round((i + 1) / schedule.length * 100)}%)`);
       }
-    ]);
+    }
 
-    // Create a default pattern (all cells intensity 1)
-    return Array(rows).fill(0).map(() => Array(columns).fill(1));
-  } else {
-    console.log(chalk.blue('Creating a custom grid pattern:'));
-    console.log(chalk.dim('Use 0-4 for intensity levels (0 = no commits, 4 = maximum intensity)'));
+    console.log('\nCommits created successfully.');
 
-    const { rows, columns } = await inquirer.prompt([
-      {
-        type: 'number',
-        name: 'rows',
-        message: 'Number of rows:',
-        default: 5,
-        validate: (input: number) => input > 0 && input <= 10 ? true : 'Please enter a number between 1 and 10'
-      },
-      {
-        type: 'number',
-        name: 'columns',
-        message: 'Number of columns:',
-        default: 7,
-        validate: (input: number) => input > 0 && input <= 20 ? true : 'Please enter a number between 1 and 20'
-      }
-    ]);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red('Error scheduling commits:'), errorMessage);
+  }
+}
 
-    // Create an empty pattern
-    const pattern: number[][] = Array(rows).fill(0).map(() => Array(columns).fill(0));
+// Fix remaining null/undefined object checks in the file
+async function printPatternPreview(pattern: number[][]): Promise<void> {
+  console.log(chalk.blue('Pattern Preview:'));
 
-    // For small patterns, prompt for each cell
-    if (rows * columns <= 25) {
-      for (let i = 0; i < rows; i++) {
-        for (let j = 0; j < columns; j++) {
-          const { value } = await inquirer.prompt({
-            type: 'list',
-            name: 'value',
-            message: `Intensity for cell [${i},${j}]:`,
-            choices: [
-              { name: '0 - No commits', value: 0 },
-              { name: '1 - Light', value: 1 },
-              { name: '2 - Medium', value: 2 },
-              { name: '3 - Heavy', value: 3 },
-              { name: '4 - Maximum', value: 4 }
-            ]
-          });
-          pattern[i][j] = value;
+  const rows = pattern.length;
+  const cols = pattern[0]?.length || 0;
+
+  // Print column headers (days of week)
+  const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  console.log('    ' + days.join(' '));
+
+  // Print rows with week numbers
+  for (let i = 0; i < rows; i++) {
+    const weekNum = `W${i + 1}`;
+    let rowStr = `${weekNum.padEnd(3)} `;
+
+    if (pattern[i]) { // Add null check
+      for (let j = 0; j < cols; j++) {
+        const value = pattern[i][j] || 0;
+        switch (value) {
+          case 0: rowStr += chalk.dim('·'); break;
+          case 1: rowStr += chalk.green('▪'); break;
+          case 2: rowStr += chalk.green('▪'); break;
+          case 3: rowStr += chalk.green.bold('■'); break;
+          case 4: rowStr += chalk.bgGreen('■'); break;
+          default: rowStr += chalk.dim('·');
         }
+        rowStr += ' ';
       }
-    } else {
-      // For larger patterns, use a simpler approach
-      console.log(chalk.yellow('Pattern is too large for cell-by-cell input.'));
+    }
 
-      const { fillType } = await inquirer.prompt({
-        type: 'list',
-        name: 'fillType',
-        message: 'How would you like to fill the pattern?',
-        choices: [
-          { name: 'Uniform fill (all cells same value)', value: 'uniform' },
-          { name: 'Random fill', value: 'random' }
-        ]
-      });
+    console.log(rowStr);
+  }
 
-      if (fillType === 'uniform') {
+  // Legend
+  console.log('\nLegend:');
+  console.log(`${chalk.dim('·')} - No commits  ${chalk.green('▪')} - Light/Medium  ${chalk.green.bold('■')} - Heavy  ${chalk.bgGreen('■')} - Maximum`);
+}
+
+async function promptForPattern(): Promise<number[][]> {
+  console.log(chalk.blue('Creating a simple pattern...'));
+  console.log(chalk.dim('Use 0-4 for intensity levels (0 = no commits, 4 = maximum intensity)'));
+
+  // Define interface for the prompt responses
+  interface PatternPromptResponse {
+    rows: number;
+    columns: number;
+  }
+
+  const responses = await inquirer.prompt<PatternPromptResponse>([
+    {
+      type: 'number',
+      name: 'rows',
+      message: 'Number of rows:',
+      default: 5,
+      validate: (input: number | undefined) =>
+        input !== undefined && input > 0 && input <= 10 ? true : 'Please enter a number between 1 and 10'
+    },
+    {
+      type: 'number',
+      name: 'columns',
+      message: 'Number of columns:',
+      default: 7,
+      validate: (input: number | undefined) =>
+        input !== undefined && input > 0 && input <= 20 ? true : 'Please enter a number between 1 and 20'
+    }
+  ]);
+
+  const { rows, columns } = responses;
+
+  // Create an empty pattern
+  const pattern: number[][] = Array(rows).fill(0).map(() => Array(columns).fill(0));
+
+  // For small patterns, prompt for each cell
+  if (rows * columns <= 25) {
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < columns; j++) {
         const { value } = await inquirer.prompt({
           type: 'list',
           name: 'value',
-          message: 'Choose intensity level:',
+          message: `Intensity for cell [${i},${j}]:`,
           choices: [
+            { name: '0 - No commits', value: 0 },
             { name: '1 - Light', value: 1 },
             { name: '2 - Medium', value: 2 },
             { name: '3 - Heavy', value: 3 },
@@ -319,24 +381,60 @@ async function promptForPattern(): Promise<number[][]> {
           ]
         });
 
-        // Fill pattern with uniform value
-        for (let i = 0; i < rows; i++) {
+        // Add null check for the pattern array
+        if (pattern[i]) {
+          pattern[i][j] = value;
+        }
+      }
+    }
+  } else {
+    // For larger patterns, use a simpler approach
+    console.log(chalk.yellow('Pattern is too large for cell-by-cell input.'));
+
+    const { fillType } = await inquirer.prompt({
+      type: 'list',
+      name: 'fillType',
+      message: 'How would you like to fill the pattern?',
+      choices: [
+        { name: 'Uniform fill (all cells same value)', value: 'uniform' },
+        { name: 'Random fill', value: 'random' }
+      ]
+    });
+
+    if (fillType === 'uniform') {
+      const { value } = await inquirer.prompt({
+        type: 'list',
+        name: 'value',
+        message: 'Choose intensity level:',
+        choices: [
+          { name: '1 - Light', value: 1 },
+          { name: '2 - Medium', value: 2 },
+          { name: '3 - Heavy', value: 3 },
+          { name: '4 - Maximum', value: 4 }
+        ]
+      });
+
+      // Fill pattern with uniform value
+      for (let i = 0; i < rows; i++) {
+        if (pattern[i]) {
           for (let j = 0; j < columns; j++) {
             pattern[i][j] = value;
           }
         }
-      } else {
-        // Fill with random values
-        for (let i = 0; i < rows; i++) {
+      }
+    } else {
+      // Fill with random values
+      for (let i = 0; i < rows; i++) {
+        if (pattern[i]) {
           for (let j = 0; j < columns; j++) {
             pattern[i][j] = Math.floor(Math.random() * 4) + 1; // Random 1-4
           }
         }
       }
     }
-
-    return pattern;
   }
+
+  return pattern;
 }
 
 async function promptForDate(message: string, isStartDate: boolean): Promise<Date> {
@@ -357,8 +455,9 @@ async function promptForDate(message: string, isStartDate: boolean): Promise<Dat
       try {
         validateDateInput(input);
         return true;
-      } catch (error) {
-        return error.message;
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return errorMessage;
       }
     }
   });
@@ -367,36 +466,23 @@ async function promptForDate(message: string, isStartDate: boolean): Promise<Dat
 }
 
 async function promptForDensity(): Promise<number> {
-  const { density } = await inquirer.prompt({
-    type: 'list',
-    name: 'density',
-    message: 'Select commit density:',
-    choices: [
-      { name: 'Light (fewer commits)', value: 0.3 },
-      { name: 'Medium', value: 0.5 },
-      { name: 'Heavy', value: 0.7 },
-      { name: 'Maximum (many commits)', value: 1.0 },
-      { name: 'Custom...', value: 'custom' }
-    ]
-  });
-
-  if (density === 'custom') {
-    const { customDensity } = await inquirer.prompt({
-      type: 'number',
-      name: 'customDensity',
-      message: 'Enter density factor (0.0-1.0):',
-      default: 0.5,
-      validate: (input: number) => {
-        if (isNaN(input) || input < 0 || input > 1) {
-          return 'Please enter a number between 0 and 1';
-        }
-        return true;
-      }
-    });
-
-    return customDensity;
+  interface DensityPromptResponse {
+    density: number;
   }
 
-  return density;
+  const response = await inquirer.prompt<DensityPromptResponse>({
+    type: 'number',
+    name: 'density',
+    message: 'Enter commit density (0.1-1.0):',
+    default: 0.7,
+    validate: (input: number | undefined) => {
+      if (input === undefined || isNaN(input) || input < 0.1 || input > 1.0) {
+        return 'Please enter a number between 0.1 and 1.0';
+      }
+      return true;
+    }
+  });
+
+  return response.density;
 }
 

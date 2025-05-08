@@ -3,15 +3,20 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import chalk from 'chalk';
-import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device';
-import type { OAuthDeviceAuthOptions, OAuthAppAuthentication } from '@octokit/auth-oauth-device';
+import open from 'open';
+import { randomBytes } from 'crypto';
+import { createServer } from 'http';
+import type { ConfigService } from '../config/config.service.js';
 
 // Path for storing auth configuration
 const CONFIG_DIR = path.join(os.homedir(), '.graphify');
 const TOKEN_FILE = path.join(CONFIG_DIR, 'auth.json');
 const DEVICE_KEY_FILE = path.join(CONFIG_DIR, 'device.key');
 
-interface AuthData {
+// Default API endpoints
+const DEFAULT_API_URL = 'https://graphify-api.vercel.app'; // Our hosted API endpoint
+
+export interface AuthData {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: number;
@@ -19,60 +24,49 @@ interface AuthData {
   username?: string;
 }
 
-// Define a custom interface that extends OAuthAppAuthentication with our additional properties
-interface ExtendedOAuthAppAuthentication extends OAuthAppAuthentication {
-  refreshToken?: string;
-  expiresAt?: Date;
-}
-
 export class AuthService {
-  private configService: any;
+  private configService: ConfigService | null = null;
+  private apiUrl: string = DEFAULT_API_URL;
 
   constructor() {
+    this.initConfigService();
+  }
+
+  private async initConfigService(): Promise<void> {
     try {
-      // Dynamic import to avoid circular dependencies
-      const { ConfigService } = require('../config/config.service');
-      this.configService = new ConfigService();
+      // Dynamic import to avoid circular dependencies using ES modules
+      const { default: ConfigServiceClass } = await import('../config/config.service.js');
+      this.configService = new ConfigServiceClass();
+
+      // Check for custom API URL
+      const customApiUrl = this.configService.get('GRAPHIFY_API_URL');
+      if (customApiUrl) {
+        this.apiUrl = customApiUrl;
+      }
     } catch (error) {
       console.error('Failed to load ConfigService:', (error as Error).message);
-      throw new Error('Configuration service unavailable. Please check your installation.');
+      // Continue with defaults rather than throwing
     }
   }
 
   /**
    * Get a secure encryption key
-   * This method now requires either an environment variable or
-   * a device-specific key file - no insecure defaults
    */
   private async getEncryptionKey(): Promise<string> {
-    // First check environment variable
-    const envKey = this.configService.get('GRAPHIFY_ENCRYPTION_KEY');
-    if (envKey) {
-      return envKey;
-    }
+    // Ensure config directory exists
+    await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
 
-    // Then try to load from device-specific key file
     try {
-      await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
-
-      try {
-        // Check if key file exists
-        await fs.access(DEVICE_KEY_FILE);
-        // If it exists, read and return it
-        return await fs.readFile(DEVICE_KEY_FILE, { encoding: 'utf8' });
-      } catch (err) {
-        // If key file doesn't exist, generate a secure random key
-        const newKey = crypto.randomBytes(32).toString('hex');
-        // Save the key with secure permissions
-        await fs.writeFile(DEVICE_KEY_FILE, newKey, { mode: 0o600 });
-        console.log(chalk.green(`✓ Generated secure encryption key at ${DEVICE_KEY_FILE}`));
-        return newKey;
-      }
+      // Check if key file exists
+      await fs.access(DEVICE_KEY_FILE);
+      // If it exists, read and return it
+      return await fs.readFile(DEVICE_KEY_FILE, { encoding: 'utf8' });
     } catch (err) {
-      const error = err as Error;
-      throw new Error(
-        `Failed to secure authentication tokens: ${error.message}. Set GRAPHIFY_ENCRYPTION_KEY environment variable or ensure ~/.graphify directory is writable.`
-      );
+      // If key file doesn't exist, generate a secure random key
+      const newKey = crypto.randomBytes(32).toString('hex');
+      // Save the key with secure permissions
+      await fs.writeFile(DEVICE_KEY_FILE, newKey, { mode: 0o600 });
+      return newKey;
     }
   }
 
@@ -103,7 +97,7 @@ export class AuthService {
     } catch (err) {
       const error = err as Error;
       console.error(chalk.red('Encryption failed:'), error.message);
-      throw new Error(`Failed to secure authentication data: ${error.message}. Please check your configuration.`);
+      throw new Error(`Failed to secure authentication data: ${error.message}`);
     }
   }
 
@@ -193,7 +187,7 @@ export class AuthService {
     const authData = await this.loadAuthData();
 
     if (!authData) {
-      throw new Error('Not authenticated. Please log in first using "graphify auth login".');
+      throw new Error('Not authenticated. Please log in first using "graphify auth".');
     }
 
     // Check if token has expired
@@ -203,13 +197,12 @@ export class AuthService {
         const newAuth = await this.refreshToken(authData.refreshToken);
         return newAuth.accessToken;
       } catch (err) {
-        const error = err as Error;
         // If refresh fails, force a new login
-        throw new Error(`Authentication expired and refresh failed: ${error.message}. Please log in again using "graphify auth login".`);
+        throw new Error(`Authentication expired. Please log in again using "graphify auth".`);
       }
     } else if (this.isTokenExpired(authData)) {
       // No refresh token available
-      throw new Error('Authentication expired. Please log in again using "graphify auth login".');
+      throw new Error('Authentication expired. Please log in again using "graphify auth".');
     }
 
     return authData.accessToken;
@@ -219,54 +212,30 @@ export class AuthService {
    * Refresh an expired token
    */
   private async refreshToken(refreshToken: string): Promise<AuthData> {
-    const clientId = this.configService.get('GITHUB_CLIENT_ID');
-    const clientSecret = this.configService.get('GITHUB_CLIENT_SECRET');
-
-    if (!clientId || !clientSecret) {
-      throw new Error('Missing GitHub credentials for token refresh');
-    }
-
     try {
-      const response = await fetch('https://github.com/login/oauth/access_token', {
+      const response = await fetch(`${this.apiUrl}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
         body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-          refresh_token: refreshToken,
-          grant_type: 'refresh_token'
+          refresh_token: refreshToken
         })
       });
 
       const responseData = await response.json();
 
-      // Type check the response data
-      if (!responseData || typeof responseData !== 'object') {
-        throw new Error('Invalid response from GitHub');
-      }
-
-      const data = responseData as {
-        access_token?: string;
-        refresh_token?: string;
-        expires_in?: number;
-        scope?: string;
-        error?: string;
-        error_description?: string;
-      };
-
-      if (data.error || !data.access_token) {
-        throw new Error(data.error_description || 'Failed to refresh token');
+      if (!response.ok || !responseData.access_token) {
+        throw new Error('Failed to refresh token');
       }
 
       // Create the new auth data object
       const authData: AuthData = {
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token || refreshToken,
-        expiresAt: data.expires_in ? Date.now() + (data.expires_in * 1000) : undefined,
-        scope: data.scope ? data.scope.split(',') : undefined
+        accessToken: responseData.access_token,
+        refreshToken: responseData.refresh_token || refreshToken,
+        expiresAt: responseData.expires_in ? Date.now() + (responseData.expires_in * 1000) : undefined,
+        scope: responseData.scope ? responseData.scope.split(',') : undefined
       };
 
       // Save the new token
@@ -280,41 +249,118 @@ export class AuthService {
   }
 
   /**
-   * Authenticate with GitHub using device flow
+   * Create a local server to receive the OAuth callback
+   */
+  private createLocalServer(state: string): Promise<{ server: any, authCode: Promise<string> }> {
+    return new Promise((resolve) => {
+      // Create a promise that will be resolved when we get the auth code
+      let resolveAuthCode: (code: string) => void;
+      const authCode = new Promise<string>(resolve => {
+        resolveAuthCode = resolve;
+      });
+
+      // Create a temporary local server to receive the OAuth callback
+      const server = createServer(async (req, res) => {
+        const url = new URL(req.url || '/', `http://${req.headers.host}`);
+        const code = url.searchParams.get('code');
+        const returnedState = url.searchParams.get('state');
+
+        // Handle the callback
+        if (code && returnedState === state) {
+          // Send success page to browser
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`
+            <html>
+              <body style="font-family: sans-serif; padding: 2em; text-align: center;">
+                <h1>Authentication Successful!</h1>
+                <p>You have successfully authenticated with GitHub.</p>
+                <p>You can close this window and return to the CLI.</p>
+                <script>window.close();</script>
+              </body>
+            </html>
+          `);
+
+          // Resolve the promise with the auth code
+          resolveAuthCode(code);
+
+          // Close the server after a short delay
+          setTimeout(() => server.close(), 1000);
+        } else {
+          // Handle error
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end(`
+            <html>
+              <body style="font-family: sans-serif; padding: 2em; text-align: center;">
+                <h1>Authentication Failed</h1>
+                <p>Invalid authentication response.</p>
+                <p>Please close this window and try again.</p>
+              </body>
+            </html>
+          `);
+        }
+      }).listen(0); // Use 0 to let the OS assign an available port
+
+      // Once the server is listening, resolve the promise
+      server.on('listening', () => {
+        const address = server.address();
+        const port = address.port;
+        resolve({ server, authCode });
+      });
+    });
+  }
+
+  /**
+   * Authenticate with GitHub using browser flow
    */
   public async authenticateWithGitHub(): Promise<void> {
-    const clientId = this.configService.get('GITHUB_CLIENT_ID');
-
-    // Check for required environment variables
-    if (!clientId) {
-      throw new Error('GitHub Client ID is not set. Please set GITHUB_CLIENT_ID environment variable.');
-    }
-
     console.log(chalk.blue('Starting GitHub authentication...'));
 
-    // Create OAuth device auth flow
-    const auth = createOAuthDeviceAuth({
-      clientType: 'oauth-app',
-      clientId,
-      scopes: ['repo'], // Request minimal permissions needed
-      onVerification: ({ verification_uri, user_code }) => {
-        console.log('\nComplete your authentication in your browser:');
-        console.log(`1. Open: ${chalk.blue(verification_uri)}`);
-        console.log(`2. Enter code: ${chalk.green(user_code)}`);
-        console.log('\nWaiting for authentication...');
-      },
-    });
-
     try {
-      // Start auth flow - use our extended type
-      const authResult = await auth({ type: 'oauth' }) as ExtendedOAuthAppAuthentication;
+      // Generate a random state value for security
+      const state = randomBytes(16).toString('hex');
+
+      // Create a local server to receive the OAuth callback
+      const { server, authCode } = await this.createLocalServer(state);
+      const callbackPort = server.address().port;
+
+      // Get the authorization URL from the hosted service or local config
+      const authUrl = `${this.apiUrl}/auth/github/authorize?callback_port=${callbackPort}&state=${state}`;
+
+      console.log(chalk.blue('Opening browser for authentication...'));
+
+      // Open the browser to the authorization URL
+      await open(authUrl);
+
+      console.log(chalk.yellow('Waiting for authentication in your browser...'));
+
+      // Wait for the user to authenticate and get the auth code
+      const code = await authCode;
+
+      // Exchange the code for an access token
+      const tokenResponse = await fetch(`${this.apiUrl}/auth/github/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code,
+          state,
+          callback_port: callbackPort
+        })
+      });
+
+      const tokenData = await tokenResponse.json();
+
+      if (!tokenResponse.ok || !tokenData.access_token) {
+        throw new Error('Failed to get access token');
+      }
 
       // Create auth data object
       const authData: AuthData = {
-        accessToken: authResult.token,
-        refreshToken: authResult.refreshToken,
-        scope: authResult.scopes,
-        expiresAt: authResult.expiresAt?.getTime()
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt: tokenData.expires_in ? Date.now() + (tokenData.expires_in * 1000) : undefined,
+        scope: tokenData.scope ? tokenData.scope.split(',') : undefined
       };
 
       // Save token securely
@@ -326,7 +372,6 @@ export class AuthService {
       console.log(chalk.green('\n✓ Authentication successful!'));
       console.log(`Token securely stored in ${TOKEN_FILE}`);
 
-      return;
     } catch (err) {
       const error = err as Error;
       console.error(chalk.red('\nAuthentication failed:'), error.message);
@@ -384,7 +429,7 @@ export class AuthService {
       // Call GitHub API to get user info
       const response = await fetch('https://api.github.com/user', {
         headers: {
-          'Authorization': `token ${token}`,
+          'Authorization': `Bearer ${token}`,
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'Graphify-CLI'
         }

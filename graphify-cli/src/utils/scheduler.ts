@@ -1,11 +1,14 @@
 import { DateTime } from 'luxon';
 import chalk from 'chalk';
-// Import from shared module instead of local implementation
-import { isWeekend, isBusinessHours, adjustDateForAuthenticity, generateRandomCommitTimes } from '../../../shared/src/utils/date-utils';
-import { CommitScheduleOptions, ScheduledCommit, mapPatternToSchedule as sharedMapPatternToSchedule, checkScheduleAuthenticity as sharedCheckScheduleAuthenticity } from '../../../shared/src/utils/scheduler';
+// Import only what's needed from shared module with proper type imports
+// Removing unused imports: isWeekend, isBusinessHours, adjustDateForAuthenticity, generateRandomCommitTimes
+import type { CommitScheduleOptions, ScheduledCommit } from '../../../shared/src/utils/scheduler.js';
+import { mapPatternToSchedule as sharedMapPatternToSchedule, checkScheduleAuthenticity as sharedCheckScheduleAuthenticity } from '../../../shared/src/utils/scheduler.js';
+// Import from shared module using path alias
+import { generateScheduleFromPattern } from '@shared/utils/scheduler.js';
 
-// Re-export interfaces from shared module
-export { CommitScheduleOptions, ScheduledCommit };
+// Re-export interfaces from shared module with 'type' keyword for verbatimModuleSyntax
+export type { CommitScheduleOptions, ScheduledCommit };
 
 /**
  * Maps a 2D pattern array to commit dates based on scheduling options
@@ -35,9 +38,14 @@ export function mapPatternToSchedule(options: CommitScheduleOptions): ScheduledC
 
     console.log(chalk.green(`✓ Generated schedule with ${scheduledCommits.length} commits`));
     return scheduledCommits;
-  } catch (error) {
-    console.error(chalk.red('Error mapping pattern to schedule:'), error.message);
-    throw new Error(`Failed to create commit schedule: ${error.message}`);
+  } catch (error: unknown) {
+    // Properly handle the unknown error type
+    const errorMessage = error instanceof Error
+      ? error.message
+      : 'An unknown error occurred';
+
+    console.error(chalk.red('Error mapping pattern to schedule:'), errorMessage);
+    throw new Error(`Failed to create commit schedule: ${errorMessage}`);
   }
 }
 

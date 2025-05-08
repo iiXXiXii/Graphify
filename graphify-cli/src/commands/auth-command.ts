@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { Command } from 'commander';
-import { AuthService } from '../auth/auth.service';
+import { AuthService } from '../auth/auth.service.js';
 import inquirer from 'inquirer';
 
 const authService = new AuthService();
@@ -10,34 +10,42 @@ const authService = new AuthService();
  */
 export function initAuthCommands(program: Command): void {
   const auth = program.command('auth')
-    .description('Authentication related commands');
-
-  auth.command('login')
-    .description('Login with GitHub')
-    .action(async () => {
+    .description('Authenticate with GitHub')
+    .action(async (options) => {
+      // Default action is to login
       try {
-        await authService.authenticateWithGitHub();
-        console.log(chalk.green('Successfully authenticated with GitHub'));
-      } catch (err) {
-        const error = err as Error;
+        const isAuthenticated = await authService.isAuthenticated();
+
+        if (isAuthenticated) {
+          const userInfo = await authService.getUserInfo();
+          console.log(chalk.green('✓ Already authenticated with GitHub'));
+          if (userInfo && userInfo.username) {
+            console.log(chalk.blue(`Logged in as: ${userInfo.username}`));
+
+            // Ask if they want to re-authenticate
+            const answers = await inquirer.prompt([{
+              type: 'confirm',
+              name: 'reauth',
+              message: 'Do you want to re-authenticate?',
+              default: false
+            }]);
+
+            if (answers.reauth) {
+              await authService.authenticateWithGitHub();
+            }
+          }
+        } else {
+          // Not authenticated, start the flow
+          await authService.authenticateWithGitHub();
+        }
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
         console.error(chalk.red('Authentication failed:'), error.message);
         process.exit(1);
       }
     });
 
-  auth.command('logout')
-    .description('Logout from GitHub')
-    .action(async () => {
-      try {
-        await authService.logout();
-        console.log(chalk.yellow('You have been logged out from GitHub'));
-      } catch (err) {
-        const error = err as Error;
-        console.error(chalk.red('Logout failed:'), error.message);
-        process.exit(1);
-      }
-    });
-
+  // Subcommands for more specific operations
   auth.command('status')
     .description('Check authentication status')
     .action(async () => {
@@ -51,19 +59,49 @@ export function initAuthCommands(program: Command): void {
           }
         } else {
           console.log(chalk.yellow('Not authenticated with GitHub'));
-          console.log(`Run ${chalk.blue('graphify auth login')} to authenticate`);
+          console.log(`Run ${chalk.blue('graphify auth')} to authenticate`);
         }
-      } catch (err) {
-        const error = err as Error;
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
         console.error(chalk.red('Failed to check authentication status:'), error.message);
         process.exit(1);
       }
     });
 
-  auth.command('token')
-    .description('Manually set GitHub personal access token')
+  auth.command('logout')
+    .description('Logout from GitHub')
     .action(async () => {
       try {
+        await authService.logout();
+        console.log(chalk.yellow('You have been logged out from GitHub'));
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error(chalk.red('Logout failed:'), error.message);
+        process.exit(1);
+      }
+    });
+
+  auth.command('reset')
+    .description('Reset authentication (clear all stored credentials)')
+    .action(async () => {
+      try {
+        await authService.logout();
+        console.log(chalk.green('Authentication data has been reset'));
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error(chalk.red('Reset failed:'), error.message);
+        process.exit(1);
+      }
+    });
+
+  auth.command('token')
+    .description('Manually set GitHub personal access token (advanced)')
+    .action(async () => {
+      try {
+        console.log(chalk.yellow('⚠ Advanced: Using a personal access token directly'));
+        console.log(chalk.yellow('We recommend using the standard authentication flow instead.'));
+        console.log(chalk.yellow('Your token must have the "repo" scope to work properly.\n'));
+
         const answers = await inquirer.prompt([{
           type: 'password',
           name: 'token',
@@ -84,8 +122,8 @@ export function initAuthCommands(program: Command): void {
         } else {
           console.log(chalk.yellow('⚠ Token saved, but could not verify GitHub user information'));
         }
-      } catch (err) {
-        const error = err as Error;
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
         console.error(chalk.red('Failed to set token:'), error.message);
         process.exit(1);
       }
