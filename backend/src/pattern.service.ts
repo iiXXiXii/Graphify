@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { Pattern } from '@prisma/client';
+// Import from shared module
+import { validatePattern, createSimplePattern } from '../../shared/src/utils/pattern-utils';
 
 export interface PatternInput {
   name: string;
@@ -21,6 +23,12 @@ export class PatternService {
   async createPattern(userId: string, input: PatternInput): Promise<Pattern> {
     try {
       const { name, description, grid, rows, columns, isPublic = false, tags = [] } = input;
+
+      // Validate pattern using the shared utility
+      const validationIssues = validatePattern(grid);
+      if (validationIssues.length > 0) {
+        throw new BadRequestException(`Pattern validation failed: ${validationIssues.join(', ')}`);
+      }
 
       // Validate pattern dimensions
       if (grid.length !== rows || grid.some(row => row.length !== columns)) {
@@ -61,6 +69,17 @@ export class PatternService {
       }
 
       const { name, description, grid, rows, columns, isPublic, tags } = input;
+
+      // Validate pattern using shared utility
+      const validationIssues = validatePattern(grid);
+      if (validationIssues.length > 0) {
+        throw new BadRequestException(`Pattern validation failed: ${validationIssues.join(', ')}`);
+      }
+
+      // Validate pattern dimensions
+      if (grid.length !== rows || grid.some(row => row.length !== columns)) {
+        throw new BadRequestException('Pattern grid dimensions do not match specified rows and columns');
+      }
 
       // Update pattern
       return this.prisma.pattern.update({
@@ -306,6 +325,54 @@ export class PatternService {
       return patterns;
     } catch (error) {
       this.logger.error(`Error getting featured patterns: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  // Adding new method to create predefined patterns
+  async createSimplePattern(
+    userId: string,
+    type: 'rectangle' | 'heart' | 'letter' | 'sine' | 'random',
+    options: {
+      name?: string;
+      description?: string;
+      width?: number;
+      height?: number;
+      intensity?: number;
+      letter?: string;
+      randomness?: number;
+      isPublic?: boolean;
+      tags?: string[];
+    }
+  ): Promise<Pattern> {
+    try {
+      // Set default name based on pattern type
+      const name = options.name || `${type.charAt(0).toUpperCase() + type.slice(1)} Pattern`;
+      const description = options.description || `Auto-generated ${type} pattern`;
+      const isPublic = options.isPublic || false;
+      const tags = options.tags || [type];
+
+      // Generate the pattern grid using the shared utility
+      const grid = createSimplePattern(type, {
+        width: options.width || 7,
+        height: options.height || 7,
+        intensity: options.intensity || 2,
+        letter: options.letter,
+        randomness: options.randomness
+      });
+
+      // Create the pattern using the existing method
+      return this.createPattern(userId, {
+        name,
+        description,
+        grid,
+        rows: grid.length,
+        columns: grid[0].length,
+        isPublic,
+        tags
+      });
+    } catch (error) {
+      this.logger.error(`Error creating simple pattern: ${error.message}`, error.stack);
       throw error;
     }
   }

@@ -3,9 +3,11 @@ import { promises as fs } from 'fs';
 import * as inquirer from 'inquirer';
 import chalk from 'chalk';
 import { isAuthenticated } from '../auth';
-import { validateDateInput, formatDate } from '../utils/date-utils';
+// Import from shared module instead of local implementation
+import { validateDateInput, formatDate, adjustDateForAuthenticity } from '../../../shared/src/utils/date-utils';
 import { executeScheduledCommits, pushToGitHub } from '../utils/git-utils';
-import { validatePattern } from '../utils/pattern-utils';
+// Import from shared module instead of local implementation
+import { validatePattern } from '../../../shared/src/utils/pattern-utils';
 import { mapPatternToSchedule, checkScheduleAuthenticity } from '../utils/scheduler';
 
 export function setupCommitCommand(program: Command): void {

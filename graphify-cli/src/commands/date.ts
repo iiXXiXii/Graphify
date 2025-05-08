@@ -1,7 +1,8 @@
 import { DateTime } from 'luxon';
-import chalk from 'chalk';
 
-// Supported date formats
+/**
+ * Supported date input formats
+ */
 const DATE_FORMATS = [
   'yyyy-MM-dd',            // 2023-01-15
   'yyyy/MM/dd',            // 2023/01/15
@@ -13,7 +14,9 @@ const DATE_FORMATS = [
   'EEEE, MMMM d, yyyy',    // Sunday, January 15, 2023
 ];
 
-// Special date keywords
+/**
+ * Special date keywords that can be used in place of specific dates
+ */
 const SPECIAL_DATES: Record<string, () => DateTime> = {
   'yesterday': () => DateTime.now().minus({ days: 1 }),
   'today': () => DateTime.now(),
@@ -24,7 +27,9 @@ const SPECIAL_DATES: Record<string, () => DateTime> = {
   'next-month': () => DateTime.now().plus({ months: 1 }),
 };
 
-// Relative date regex patterns
+/**
+ * Patterns for parsing relative date expressions
+ */
 const RELATIVE_DATE_PATTERNS = [
   // "3 days ago", "5 weeks ago", etc.
   { regex: /^(\d+)\s+(day|days|week|weeks|month|months|year|years)\s+ago$/i, direction: -1 },
@@ -33,14 +38,20 @@ const RELATIVE_DATE_PATTERNS = [
 ];
 
 /**
+ * Supported time units for relative date expressions
+ */
+type TimeUnit = 'day' | 'week' | 'month' | 'year';
+
+/**
  * Validates date input and returns a standardized date string
+ *
  * @param dateInput - User provided date string
  * @returns Standardized date string (ISO format)
  * @throws Error if the date format is invalid
  */
 export function validateDateInput(dateInput: string): string {
-  if (!dateInput) {
-    throw new Error('Date input cannot be empty');
+  if (!dateInput || typeof dateInput !== 'string') {
+    throw new Error('Date input cannot be empty and must be a string');
   }
 
   // Convert to lowercase for special keywords
@@ -48,25 +59,38 @@ export function validateDateInput(dateInput: string): string {
 
   // Check for special keyword dates
   if (lowerInput in SPECIAL_DATES) {
-    return SPECIAL_DATES[lowerInput]().toFormat('yyyy-MM-dd');
+    const specialDate = SPECIAL_DATES[lowerInput as keyof typeof SPECIAL_DATES];
+    if (specialDate) {
+      return specialDate().toFormat('yyyy-MM-dd');
+    }
+    throw new Error(`Special date "${lowerInput}" exists but handler is undefined`);
   }
 
   // Check for relative dates (e.g., "3 days ago" or "in 2 weeks")
   for (const pattern of RELATIVE_DATE_PATTERNS) {
     const match = lowerInput.match(pattern.regex);
-    if (match) {
+    if (match && match[1] && match[2]) {
       const amount = parseInt(match[1], 10);
       const unit = match[2].toLowerCase();
 
       // Convert to singular form for Luxon
-      let luxonUnit = unit.endsWith('s') ? unit.slice(0, -1) : unit;
+      const luxonUnit = unit.endsWith('s') ? unit.slice(0, -1) : unit;
 
       // Handle "in X days" vs "X days ago"
-      const dt = DateTime.now().plus({
-        [luxonUnit as 'day' | 'week' | 'month' | 'year']: amount * pattern.direction
-      });
+      try {
+        const dt = DateTime.now().plus({
+          [luxonUnit as TimeUnit]: amount * pattern.direction
+        });
 
-      return dt.toFormat('yyyy-MM-dd');
+        if (!dt.isValid) {
+          throw new Error(`Invalid date calculation: ${dt.invalidReason || 'Unknown error'}`);
+        }
+
+        return dt.toFormat('yyyy-MM-dd');
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Failed to parse relative date "${dateInput}": ${errorMessage}`);
+      }
     }
   }
 
@@ -91,15 +115,23 @@ export function validateDateInput(dateInput: string): string {
 
 /**
  * Parses a standardized date string into a Date object
+ *
  * @param dateStr - Standardized date string (from validateDateInput)
  * @returns JavaScript Date object
  */
 export function parseDate(dateStr: string): Date {
-  return DateTime.fromFormat(dateStr, 'yyyy-MM-dd').toJSDate();
+  const dt = DateTime.fromFormat(dateStr, 'yyyy-MM-dd');
+
+  if (!dt.isValid) {
+    throw new Error(`Invalid date string: ${dateStr}. ${dt.invalidReason}`);
+  }
+
+  return dt.toJSDate();
 }
 
 /**
  * Calculates a date range for scheduling
+ *
  * @param startDate - Start date string
  * @param endDate - End date string or null
  * @param days - Number of days to include if endDate is null
@@ -111,13 +143,17 @@ export function calculateDateRange(
   days: number = 7
 ): { start: Date; end: Date } {
   const start = parseDate(validateDateInput(startDate));
-
   let end: Date;
+
   if (endDate) {
     end = parseDate(validateDateInput(endDate));
   } else {
     // Default to startDate + days
-    end = DateTime.fromJSDate(start).plus({ days }).toJSDate();
+    const endDt = DateTime.fromJSDate(start).plus({ days });
+    if (!endDt.isValid) {
+      throw new Error(`Failed to calculate end date: ${endDt.invalidReason}`);
+    }
+    end = endDt.toJSDate();
   }
 
   // Validate that end date is after start date
@@ -129,168 +165,9 @@ export function calculateDateRange(
 }
 
 /**
- * Checks if a date is a weekend
- * @param date - Date to check
- * @returns True if the date is a Saturday or Sunday
- */
-export function isWeekend(date: Date): boolean {
-  const day = DateTime.fromJSDate(date).weekday;
-  return day === 6 || day === 7; // Saturday is 6, Sunday is 7 in Luxon
-}
-
-/**
- * Checks if a date is within business hours (9 AM - 5 PM)
- * @param date - Date to check
- * @returns True if the date is within business hours
- */
-export function isBusinessHours(date: Date): boolean {
-  const hour = DateTime.fromJSDate(date).hour;
-  return hour >= 9 && hour < 17;
-}
-
-/**
- * Adjusts a date to be within business hours on a weekday
- * @param date - Date to adjust
- * @param avoidWeekends - Whether to avoid weekends
- * @param businessHoursOnly - Whether to adjust to business hours
- * @returns Adjusted date
- */
-export function adjustDateForAuthenticity(
-  date: Date,
-  avoidWeekends: boolean = true,
-  businessHoursOnly: boolean = true
-): Date {
-  let dt = DateTime.fromJSDate(date);
-
-  // Adjust for weekends if needed
-  if (avoidWeekends && (dt.weekday === 6 || dt.weekday === 7)) {
-    // Move to next Monday
-    const daysToAdd = dt.weekday === 6 ? 2 : 1;
-    dt = dt.plus({ days: daysToAdd });
-  }
-
-  // Adjust for business hours if needed
-  if (businessHoursOnly) {
-    const hour = dt.hour;
-    if (hour < 9) {
-      dt = dt.set({ hour: 9 + Math.floor(Math.random() * 4) }); // Between 9 AM and 1 PM
-    } else if (hour >= 17) {
-      dt = dt.set({ hour: 10 + Math.floor(Math.random() * 6) }); // Between 10 AM and 4 PM
-      dt = dt.plus({ days: 1 }); // Move to next day
-
-      // Check weekend again after moving to next day
-      if (avoidWeekends && (dt.weekday === 6 || dt.weekday === 7)) {
-        dt = dt.plus({ days: dt.weekday === 6 ? 2 : 1 });
-      }
-    }
-
-    // Set random minutes
-    dt = dt.set({ minute: Math.floor(Math.random() * 60) });
-  }
-
-  return dt.toJSDate();
-}
-
-/**
- * Creates a distribution of dates within a range based on a pattern and density
- * @param start - Start date
- * @param end - End date
- * @param density - Commit density (0.0 to 1.0)
- * @param pattern - Optional weight pattern
- * @returns Array of dates
- */
-export function distributeDatesInRange(
-  start: Date,
-  end: Date,
-  density: number = 0.5,
-  pattern: number[][] = []
-): Date[] {
-  const startDt = DateTime.fromJSDate(start);
-  const endDt = DateTime.fromJSDate(end);
-
-  // Calculate days between dates
-  const days = Math.ceil(endDt.diff(startDt, 'days').days);
-
-  // If there's a pattern, use it to distribute dates
-  if (pattern.length > 0 && pattern[0].length > 0) {
-    return distributeDatesWithPattern(start, end, density, pattern);
-  }
-
-  // Otherwise do a simple random distribution
-  const dates: Date[] = [];
-  const totalCommits = Math.max(1, Math.round(days * density));
-
-  for (let i = 0; i < totalCommits; i++) {
-    // Random distribution across the range
-    const randomDays = Math.floor(Math.random() * days);
-    const date = startDt.plus({ days: randomDays }).toJSDate();
-    dates.push(adjustDateForAuthenticity(date));
-  }
-
-  return dates.sort((a, b) => a.getTime() - b.getTime());
-}
-
-/**
- * Distributes dates based on a weight pattern
- * @param start - Start date
- * @param end - End date
- * @param density - Commit density multiplier
- * @param pattern - 2D array of weights (0-5 typically)
- * @returns Array of dates
- */
-function distributeDatesWithPattern(
-  start: Date,
-  end: Date,
-  density: number,
-  pattern: number[][]
-): Date[] {
-  const startDt = DateTime.fromJSDate(start);
-  const endDt = DateTime.fromJSDate(end);
-  const days = Math.ceil(endDt.diff(startDt, 'days').days);
-
-  // Calculate pattern dimensions
-  const rows = pattern.length;
-  const cols = pattern[0].length;
-  const patternSize = rows * cols;
-
-  // Calculate days per cell
-  const daysPerCell = Math.max(1, Math.floor(days / patternSize));
-
-  const dates: Date[] = [];
-
-  // Map each cell in the pattern to potential commit dates
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const cellValue = pattern[row][col];
-      if (cellValue <= 0) continue; // Skip empty cells
-
-      // Calculate base date for this cell
-      const dayOffset = (row * cols + col) * daysPerCell;
-      const baseDate = startDt.plus({ days: dayOffset });
-
-      // Number of commits based on cell intensity and density
-      const commitsForCell = Math.max(1, Math.round(cellValue * density));
-
-      // Add random commits for this cell
-      for (let i = 0; i < commitsForCell; i++) {
-        const randomOffset = Math.floor(Math.random() * daysPerCell);
-        const date = baseDate.plus({ days: randomOffset }).toJSDate();
-        dates.push(adjustDateForAuthenticity(date));
-      }
-    }
-  }
-
-  return dates.sort((a, b) => a.getTime() - b.getTime());
-}
-
-/**
- * Date utility functions for GitHub commit scheduling
- * These functions help create more natural and authentic commit patterns
- */
-
-/**
- * Check if a date falls on a weekend (Saturday or Sunday)
- * @param date The date to check
+ * Checks if a date falls on a weekend (Saturday or Sunday)
+ *
+ * @param date - The date to check
  * @returns True if date is a weekend
  */
 export function isWeekend(date: Date): boolean {
@@ -299,8 +176,9 @@ export function isWeekend(date: Date): boolean {
 }
 
 /**
- * Check if time is within typical business hours (9 AM - 5 PM)
- * @param date The date to check
+ * Checks if time is within typical business hours (9 AM - 5 PM)
+ *
+ * @param date - The date to check
  * @returns True if date is within business hours
  */
 export function isBusinessHours(date: Date): boolean {
@@ -309,8 +187,9 @@ export function isBusinessHours(date: Date): boolean {
 }
 
 /**
- * Check if a date is during typical sleep hours (11 PM - 6 AM)
- * @param date The date to check
+ * Checks if a date is during typical sleep hours (11 PM - 6 AM)
+ *
+ * @param date - The date to check
  * @returns True if date is during sleep hours
  */
 export function isSleepHours(date: Date): boolean {
@@ -321,7 +200,8 @@ export function isSleepHours(date: Date): boolean {
 /**
  * Checks if a date is a typically observed US holiday
  * This is a basic implementation - only checks major US holidays
- * @param date The date to check
+ *
+ * @param date - The date to check
  * @returns True if the date is a holiday
  */
 export function isHoliday(date: Date): boolean {
@@ -341,7 +221,7 @@ export function isHoliday(date: Date): boolean {
     }
   }
 
-  // Independence Day
+  // Independence Day (July 4th)
   if (month === 6 && day === 4) return true;
 
   // Labor Day (first Monday in September)
@@ -364,18 +244,35 @@ export function isHoliday(date: Date): boolean {
 }
 
 /**
+ * Configuration options for date adjustments
+ */
+export interface DateAdjustmentOptions {
+  /** Whether to avoid weekends when generating dates */
+  avoidWeekends?: boolean;
+  /** Whether to only generate dates during work hours */
+  workHoursOnly?: boolean;
+  /** Whether to avoid holiday dates */
+  avoidHolidays?: boolean;
+}
+
+/**
  * Adjusts a date to appear more authentic by avoiding weekends,
  * holidays, sleep hours, etc. based on provided parameters
- * @param date The date to adjust
- * @param avoidWeekends Whether to avoid weekends
- * @param workHoursOnly Whether to restrict to work hours
+ *
+ * @param date - The date to adjust
+ * @param options - Adjustment options
  * @returns An adjusted date that appears more authentic
  */
 export function adjustDateForAuthenticity(
   date: Date,
-  avoidWeekends: boolean = true,
-  workHoursOnly: boolean = true
+  options: DateAdjustmentOptions = {}
 ): Date {
+  const {
+    avoidWeekends = true,
+    workHoursOnly = true,
+    avoidHolidays = true
+  } = options;
+
   const adjustedDate = new Date(date);
 
   // Avoid weekends if specified
@@ -394,8 +291,8 @@ export function adjustDateForAuthenticity(
     const hour = adjustedDate.getHours();
 
     if (hour < 9) {
-      // Before work, move to 9 AM
-      adjustedDate.setHours(9, adjustedDate.getMinutes(), 0);
+      // Before work, move to 9 AM + random minutes
+      adjustedDate.setHours(9, Math.floor(Math.random() * 45), 0);
     } else if (hour > 17) {
       // After work, move to 4-5 PM (end of day)
       adjustedDate.setHours(16 + Math.round(Math.random()),
@@ -404,31 +301,172 @@ export function adjustDateForAuthenticity(
   }
 
   // Avoid holidays (recursively adjust if it's a holiday)
-  if (avoidWeekends && isHoliday(adjustedDate)) {
+  if (avoidHolidays && isHoliday(adjustedDate)) {
     // Move one day forward and check again (recursive)
     adjustedDate.setDate(adjustedDate.getDate() + 1);
-    return adjustDateForAuthenticity(adjustedDate, avoidWeekends, workHoursOnly);
+    return adjustDateForAuthenticity(adjustedDate, options);
   }
 
   return adjustedDate;
 }
 
 /**
+ * Parameters for date distribution
+ */
+export interface DateDistributionOptions extends DateAdjustmentOptions {
+  /** Commit density multiplier (0.0 to 5.0, higher means more commits) */
+  density?: number;
+  /** 2D array pattern for weighted distribution */
+  pattern?: number[][];
+}
+
+/**
+ * Creates a distribution of dates within a range based on a pattern and density
+ *
+ * @param start - Start date
+ * @param end - End date
+ * @param options - Distribution options
+ * @returns Array of dates
+ */
+export function distributeDatesInRange(
+  start: Date,
+  end: Date,
+  options: DateDistributionOptions = {}
+): Date[] {
+  const { density = 0.5, pattern = [], ...adjustmentOptions } = options;
+  const startDt = DateTime.fromJSDate(start);
+  const endDt = DateTime.fromJSDate(end);
+
+  // Calculate days between dates
+  const days = Math.ceil(endDt.diff(startDt, 'days').days);
+
+  if (days <= 0) {
+    throw new Error('End date must be after start date');
+  }
+
+  // If there's a pattern, use it to distribute dates
+  if (pattern.length > 0 && pattern[0] && pattern[0].length > 0) {
+    return distributeDatesWithPattern(start, end, density, pattern, adjustmentOptions);
+  }
+
+  // Otherwise do a simple random distribution
+  const dates: Date[] = [];
+  const totalCommits = Math.max(1, Math.round(days * density));
+
+  for (let i = 0; i < totalCommits; i++) {
+    // Random distribution across the range
+    const randomDays = Math.floor(Math.random() * days);
+    const date = startDt.plus({ days: randomDays }).toJSDate();
+    dates.push(adjustDateForAuthenticity(date, adjustmentOptions));
+  }
+
+  return dates.sort((a, b) => a.getTime() - b.getTime());
+}
+
+/**
+ * Distributes dates based on a weight pattern
+ *
+ * @param start - Start date
+ * @param end - End date
+ * @param density - Commit density multiplier
+ * @param pattern - 2D array of weights (0-5 typically)
+ * @param adjustmentOptions - Options for date adjustment
+ * @returns Array of dates
+ */
+function distributeDatesWithPattern(
+  start: Date,
+  end: Date,
+  density: number,
+  pattern: number[][],
+  adjustmentOptions: DateAdjustmentOptions = {}
+): Date[] {
+  const startDt = DateTime.fromJSDate(start);
+  const endDt = DateTime.fromJSDate(end);
+  const days = Math.ceil(endDt.diff(startDt, 'days').days);
+
+  // Calculate pattern dimensions
+  const rows = pattern.length;
+  // Ensure we have at least one row before accessing cols
+  if (rows === 0) {
+    return [];
+  }
+
+  // Ensure the first row exists before accessing its length
+  const firstRow = pattern[0];
+  if (!firstRow) {
+    return [];
+  }
+
+  const cols = firstRow.length;
+  const patternSize = rows * cols;
+
+  // Calculate days per cell
+  const daysPerCell = Math.max(1, Math.floor(days / patternSize));
+
+  const dates: Date[] = [];
+
+  // Map each cell in the pattern to potential commit dates
+  for (let row = 0; row < rows; row++) {
+    const currentRow = pattern[row];
+    if (!currentRow) continue;
+
+    for (let col = 0; col < cols; col++) {
+      const cellValue = currentRow[col];
+      if (cellValue === undefined || cellValue <= 0) continue; // Skip empty or undefined cells
+
+      // Calculate base date for this cell
+      const dayOffset = (row * cols + col) * daysPerCell;
+      if (dayOffset >= days) continue; // Skip if we're beyond our date range
+
+      const baseDate = startDt.plus({ days: dayOffset });
+
+      // Number of commits based on cell intensity and density
+      // Add slight randomness for more natural patterns
+      const baseCommits = cellValue * density;
+      const randomFactor = 0.7 + (Math.random() * 0.6); // 0.7 to 1.3 random factor
+      const commitsForCell = Math.max(1, Math.round(baseCommits * randomFactor));
+
+      // Add random commits for this cell
+      for (let i = 0; i < commitsForCell; i++) {
+        // Ensure commits stay within cell's day range and overall date range
+        const maxOffset = Math.min(daysPerCell - 1, days - dayOffset - 1);
+        if (maxOffset < 0) continue;
+
+        const randomOffset = Math.floor(Math.random() * (maxOffset + 1));
+        const date = baseDate.plus({ days: randomOffset }).toJSDate();
+        dates.push(adjustDateForAuthenticity(date, adjustmentOptions));
+      }
+    }
+  }
+
+  return dates.sort((a, b) => a.getTime() - b.getTime());
+}
+
+/**
  * Generate a distribution of commit times that appears authentic
- * @param numCommits Number of commits to generate
- * @param avoidWeekends Whether to avoid weekends
- * @param workHoursOnly Whether to restrict to work hours
+ *
+ * @param numCommits - Number of commits to generate
+ * @param startDate - Start date of the range
+ * @param endDate - End date of the range
+ * @param options - Date adjustment options
  * @returns An array of Date objects for commits
  */
 export function generateAuthenticCommitDates(
   numCommits: number,
   startDate: Date,
   endDate: Date,
-  avoidWeekends: boolean = true,
-  workHoursOnly: boolean = true
+  options: DateAdjustmentOptions = {}
 ): Date[] {
+  if (numCommits <= 0) {
+    return [];
+  }
+
   const dates: Date[] = [];
   const dateRange = endDate.getTime() - startDate.getTime();
+
+  if (dateRange <= 0) {
+    throw new Error('End date must be after start date');
+  }
 
   // Generate random times within date range
   for (let i = 0; i < numCommits; i++) {
@@ -436,10 +474,7 @@ export function generateAuthenticCommitDates(
     const randomDate = new Date(startDate.getTime() + randomOffset);
 
     // Adjust for authenticity
-    const adjustedDate = adjustDateForAuthenticity(
-      randomDate, avoidWeekends, workHoursOnly
-    );
-
+    const adjustedDate = adjustDateForAuthenticity(randomDate, options);
     dates.push(adjustedDate);
   }
 
@@ -448,30 +483,46 @@ export function generateAuthenticCommitDates(
 }
 
 /**
+ * Daily time slots for commit scheduling
+ */
+interface TimeSlot {
+  /** Hour of day (0-23) */
+  hour: number;
+  /** Minute of hour (0-59) */
+  minute: number;
+  /** Relative likelihood of committing at this time */
+  weight: number;
+}
+
+/**
  * Generate a commit schedule that follows a natural daily rhythm
- * @param startDate The start date
- * @param endDate The end date
- * @param intensity Number of commits per day (average)
+ *
+ * @param startDate - The start date
+ * @param endDate - The end date
+ * @param intensity - Number of commits per day (average)
+ * @param options - Date adjustment options
  * @returns An array of scheduled dates
  */
 export function generateDailyRhythmSchedule(
   startDate: Date,
   endDate: Date,
-  intensity: number = 3
+  intensity: number = 3,
+  options: DateAdjustmentOptions = { avoidWeekends: true }
 ): Date[] {
   const dates: Date[] = [];
-  const dailyPattern = [
-    { hour: 10, minute: 30, weight: 1 },  // Morning commit
-    { hour: 13, minute: 15, weight: 0.7 }, // After lunch
-    { hour: 16, minute: 45, weight: 1.3 }  // End of day
+  const dailyPattern: TimeSlot[] = [
+    { hour: 10, minute: 30, weight: 1 },    // Morning commit
+    { hour: 13, minute: 15, weight: 0.7 },  // After lunch
+    { hour: 16, minute: 45, weight: 1.3 }   // End of day
   ];
 
   let currentDate = new Date(startDate);
+  const endDateValue = endDate.valueOf();
 
   // Iterate through each day
-  while (currentDate <= endDate) {
-    // Skip weekends
-    if (!isWeekend(currentDate)) {
+  while (currentDate.valueOf() <= endDateValue) {
+    // Skip weekends if specified
+    if (!(options.avoidWeekends && isWeekend(currentDate))) {
       // Apply daily pattern with some randomness
       dailyPattern.forEach(timeSlot => {
         // Apply intensity factor and randomness
@@ -479,16 +530,22 @@ export function generateDailyRhythmSchedule(
           const commitDate = new Date(currentDate);
 
           // Set hour with slight randomness
-          const hourVariation = Math.floor(Math.random() * 60) - 30;
+          const hourVariation = Math.floor(Math.random() * 60) - 30; // -30 to +29 minutes
           const minuteOffset = timeSlot.minute + hourVariation;
 
+          // Handle minute overflow/underflow
+          let adjustedHour = timeSlot.hour + Math.floor(minuteOffset / 60);
+          const adjustedMinute = ((minuteOffset % 60) + 60) % 60; // Handle negative minutes
+
           commitDate.setHours(
-            timeSlot.hour + Math.floor(minuteOffset / 60),
-            minuteOffset % 60,
-            Math.floor(Math.random() * 60)
+            adjustedHour,
+            adjustedMinute,
+            Math.floor(Math.random() * 60) // Random seconds
           );
 
-          dates.push(commitDate);
+          // Apply authenticity adjustments
+          const adjustedDate = adjustDateForAuthenticity(commitDate, options);
+          dates.push(adjustedDate);
         }
       });
     }
@@ -502,7 +559,8 @@ export function generateDailyRhythmSchedule(
 
 /**
  * Format a date in a human-readable format
- * @param date The date to format
+ *
+ * @param date - The date to format
  * @returns A formatted date string
  */
 export function formatDate(date: Date): string {
@@ -519,11 +577,16 @@ export function formatDate(date: Date): string {
 
 /**
  * Calculate a reasonable commit frequency based on a contribution goal
- * @param goal Total number of contributions desired
- * @param days Number of days to spread contributions across
+ *
+ * @param goal - Total number of contributions desired
+ * @param days - Number of days to spread contributions across
  * @returns Recommended intensity (commits per day)
  */
 export function calculateCommitFrequency(goal: number, days: number): number {
+  if (days <= 0) {
+    throw new Error('Days must be a positive number');
+  }
+
   // Calculate raw average
   const rawAverage = goal / days;
 

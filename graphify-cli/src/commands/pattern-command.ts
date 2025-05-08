@@ -3,7 +3,8 @@ import chalk from 'chalk';
 import * as inquirer from 'inquirer';
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { validatePattern, createSimplePattern } from '../utils/pattern-utils';
+// Import from shared module instead of local utils
+import { validatePattern, createSimplePattern } from '../../../shared/src/utils/pattern-utils';
 
 export function setupPatternCommand(program: Command): void {
   const patternCommand = program

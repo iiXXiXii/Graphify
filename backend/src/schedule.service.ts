@@ -4,91 +4,8 @@ import { DateTime } from 'luxon';
 import { RRule, Frequency } from 'rrule';
 import { Schedule, Pattern, User, Prisma } from '@prisma/client';
 import { Octokit } from '@octokit/rest';
-
-// Local implementations of shared interfaces since module import is failing
-interface CommitScheduleOptions {
-  startDate: Date;
-  endDate: Date;
-  pattern: number[][];
-  density?: number;
-  randomize?: boolean;
-  timezone?: string;
-  workHoursOnly?: boolean;
-  avoidWeekends?: boolean;
-  maxCommitsPerDay?: number;
-  recurrence?: {
-    frequency: 'daily' | 'weekly' | 'monthly';
-    interval?: number;
-    count?: number;
-    until?: Date;
-  };
-}
-
-interface ScheduledCommit {
-  date: DateTime;
-  message?: string;
-  weight: number;
-  repositoryId?: string;
-  status?: string;
-}
-
-// Local implementation of shared functions
-function mapPatternToSchedule(options: CommitScheduleOptions): ScheduledCommit[] {
-  // Simplified implementation - in production, import from @graphify/shared
-  const { startDate, endDate, pattern } = options;
-  const startDt = DateTime.fromJSDate(startDate);
-  const endDt = DateTime.fromJSDate(endDate);
-
-  const scheduledCommits: ScheduledCommit[] = [];
-  // Simple implementation that creates one commit per day
-  const days = Math.ceil(endDt.diff(startDt, 'days').days);
-
-  for (let i = 0; i < days; i++) {
-    const date = startDt.plus({ days: i });
-    scheduledCommits.push({
-      date,
-      weight: 1,
-      message: `Scheduled commit for ${date.toFormat('yyyy-MM-dd')}`
-    });
-  }
-
-  return scheduledCommits;
-}
-
-function checkScheduleAuthenticity(commits: ScheduledCommit[]): string[] {
-  // Simplified implementation - in production, import from @graphify/shared
-  return [];
-}
-
-async function processBatchedCommits<T>(
-  items: T[],
-  processFn: (item: T) => Promise<void>,
-  options: {
-    batchSize?: number,
-    delayBetweenItems?: number,
-    delayBetweenBatches?: number,
-    onProgress?: (processed: number, total: number) => void
-  } = {}
-): Promise<{ succeeded: number, failed: number, errors: Error[] }> {
-  // Simplified implementation - in production, import from @graphify/shared
-  const results = {
-    succeeded: 0,
-    failed: 0,
-    errors: [] as Error[]
-  };
-
-  for (const item of items) {
-    try {
-      await processFn(item);
-      results.succeeded++;
-    } catch (error) {
-      results.failed++;
-      results.errors.push(error as Error);
-    }
-  }
-
-  return results;
-}
+// Import from shared module instead of local implementations
+import { CommitScheduleOptions, ScheduledCommit, mapPatternToSchedule, checkScheduleAuthenticity, processBatchedCommits } from '../../shared/src/utils/scheduler';
 
 // Repository interface to match Prisma model
 interface Repository {
@@ -745,7 +662,7 @@ export class ScheduleService {
         AND (s."endDate" IS NULL OR s."endDate" >= ${now});
     ` as any[];
 
-    const result = [];
+    const result: any[] = [];
     for (const schedule of activeSchedules) {
       const pattern = await this.prisma.pattern.findUnique({
         where: { id: schedule.patternId }

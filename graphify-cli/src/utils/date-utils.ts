@@ -1,5 +1,8 @@
 import { DateTime } from 'luxon';
 
+// Define valid time units for better type safety
+type TimeUnit = 'day' | 'week' | 'month' | 'year';
+
 /**
  * Validates date input and returns a standardized date string
  */
@@ -36,18 +39,29 @@ export function validateDateInput(dateInput: string): Date {
 
   for (const pattern of relPatterns) {
     const match = lowerInput.match(pattern.regex);
-    if (match) {
+    if (match && match[1] && match[2]) {
       const amount = parseInt(match[1], 10);
       const unit = match[2].toLowerCase();
 
-      // Convert to singular form for Luxon
-      let luxonUnit = unit.endsWith('s') ? unit.slice(0, -1) : unit;
+      // Convert to singular form for Luxon and ensure type safety
+      let luxonUnit: TimeUnit = 'day'; // Default
+
+      if (unit.startsWith('day')) luxonUnit = 'day';
+      else if (unit.startsWith('week')) luxonUnit = 'week';
+      else if (unit.startsWith('month')) luxonUnit = 'month';
+      else if (unit.startsWith('year')) luxonUnit = 'year';
+
+      // Create a properly typed object for DateTime.plus/minus
+      const durationObj: Record<TimeUnit, number> = {
+        day: 0,
+        week: 0,
+        month: 0,
+        year: 0
+      };
+      durationObj[luxonUnit] = amount * pattern.direction;
 
       // Handle "in X days" vs "X days ago"
-      const dt = DateTime.now().plus({
-        [luxonUnit as 'day' | 'week' | 'month' | 'year']: amount * pattern.direction
-      });
-
+      const dt = DateTime.now().plus(durationObj);
       return dt.toJSDate();
     }
   }
@@ -133,6 +147,10 @@ export function adjustDateForAuthenticity(
   avoidWeekends: boolean = true,
   workHoursOnly: boolean = true
 ): Date {
+  if (!date) {
+    throw new Error('Date cannot be null or undefined');
+  }
+
   const dt = DateTime.fromJSDate(date);
   let adjusted = dt;
 
@@ -175,6 +193,14 @@ export function generateRandomCommitTimes(
   count: number,
   workHoursOnly: boolean = true
 ): DateTime[] {
+  if (!baseDate) {
+    throw new Error('Base date cannot be null or undefined');
+  }
+
+  if (count < 0) {
+    throw new Error('Count must be a non-negative number');
+  }
+
   const result: DateTime[] = [];
   const baseDt = DateTime.fromJSDate(baseDate);
 
