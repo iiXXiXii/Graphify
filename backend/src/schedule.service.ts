@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { RRule, Frequency } from 'rrule';
 import { Schedule, Repository, Pattern } from '@prisma/client';
 import { Octokit } from '@octokit/rest';
+import { processBatchedCommits } from '@graphify/shared';
 
 interface CommitScheduleOptions {
   startDate: Date;
@@ -436,7 +437,7 @@ export class ScheduleService {
         orderBy: {
           date: 'asc' // Process oldest commits first
         },
-        take: 50 // Process in batches to avoid overwhelming the system
+        take: 100 // Process in larger batches since we're using efficient batch processing
       });
 
       this.logger.log(`Found ${pendingCommits.length} pending commits to execute`);
@@ -444,7 +445,7 @@ export class ScheduleService {
       // Group commits by user for better token management and rate limiting
       const commitsByUser = this.groupCommitsByUser(pendingCommits);
 
-      // Process each user's commits with rate limiting
+      // Process each user's commits with improved batch processing
       for (const [userId, userCommits] of commitsByUser.entries()) {
         // Get the most recent valid GitHub token for this user
         const authSession = await this.prisma.authSession.findFirst({
@@ -484,8 +485,27 @@ export class ScheduleService {
           }
         });
 
-        // Process this user's commits with controlled rate
-        await this.processUserCommits(userCommits, octokit);
+        // Use the shared batch processing utility to handle commits with proper rate limiting
+        const results = await processBatchedCommits(
+          userCommits,
+          async (commit) => {
+            await this.executeCommit(commit, octokit);
+          },
+          {
+            batchSize: 5, // Process 5 commits in parallel
+            delayBetweenItems: 1000, // 1 second between items
+            delayBetweenBatches: 5000, // 5 seconds between batches
+            onProgress: (processed, total) => {
+              this.logger.log(`Progress: ${processed}/${total} commits processed for user ${userId}`);
+            }
+          }
+        );
+
+        // Log the results
+        this.logger.log(`Processed ${results.succeeded} commits successfully for user ${userId}`);
+        if (results.failed > 0) {
+          this.logger.warn(`Failed to process ${results.failed} commits for user ${userId}`);
+        }
       }
     } catch (error) {
       this.logger.error(`Error executing scheduled commits: ${error.message}`, error.stack);
