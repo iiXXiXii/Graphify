@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import chalk from 'chalk';
 import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device';
-import { ConfigService } from '../config/config.service';
+import type { OAuthDeviceAuthOptions, OAuthAppAuthentication } from '@octokit/auth-oauth-device';
 
 // Path for storing auth configuration
 const CONFIG_DIR = path.join(os.homedir(), '.graphify');
@@ -19,11 +19,24 @@ interface AuthData {
   username?: string;
 }
 
+// Define a custom interface that extends OAuthAppAuthentication with our additional properties
+interface ExtendedOAuthAppAuthentication extends OAuthAppAuthentication {
+  refreshToken?: string;
+  expiresAt?: Date;
+}
+
 export class AuthService {
-  private configService: ConfigService;
+  private configService: any;
 
   constructor() {
-    this.configService = new ConfigService();
+    try {
+      // Dynamic import to avoid circular dependencies
+      const { ConfigService } = require('../config/config.service');
+      this.configService = new ConfigService();
+    } catch (error) {
+      console.error('Failed to load ConfigService:', (error as Error).message);
+      throw new Error('Configuration service unavailable. Please check your installation.');
+    }
   }
 
   /**
@@ -47,7 +60,7 @@ export class AuthService {
         await fs.access(DEVICE_KEY_FILE);
         // If it exists, read and return it
         return await fs.readFile(DEVICE_KEY_FILE, { encoding: 'utf8' });
-      } catch {
+      } catch (err) {
         // If key file doesn't exist, generate a secure random key
         const newKey = crypto.randomBytes(32).toString('hex');
         // Save the key with secure permissions
@@ -55,9 +68,10 @@ export class AuthService {
         console.log(chalk.green(`✓ Generated secure encryption key at ${DEVICE_KEY_FILE}`));
         return newKey;
       }
-    } catch (error) {
+    } catch (err) {
+      const error = err as Error;
       throw new Error(
-        'Failed to secure authentication tokens. Set GRAPHIFY_ENCRYPTION_KEY environment variable or ensure ~/.graphify directory is writable.'
+        `Failed to secure authentication tokens: ${error.message}. Set GRAPHIFY_ENCRYPTION_KEY environment variable or ensure ~/.graphify directory is writable.`
       );
     }
   }
@@ -86,9 +100,10 @@ export class AuthService {
         iv: iv.toString('hex'),
         content: encrypted
       };
-    } catch (error) {
+    } catch (err) {
+      const error = err as Error;
       console.error(chalk.red('Encryption failed:'), error.message);
-      throw new Error('Failed to secure authentication data. Please check your configuration.');
+      throw new Error(`Failed to secure authentication data: ${error.message}. Please check your configuration.`);
     }
   }
 
@@ -110,8 +125,9 @@ export class AuthService {
       decrypted += decipher.final('utf8');
 
       return decrypted;
-    } catch (error) {
-      throw new Error('Failed to decrypt authentication token. You may need to log in again.');
+    } catch (err) {
+      const error = err as Error;
+      throw new Error(`Failed to decrypt authentication token: ${error.message}. You may need to log in again.`);
     }
   }
 
@@ -131,7 +147,8 @@ export class AuthService {
         encoding: 'utf8',
         mode: 0o600 // Read/write for user only
       });
-    } catch (error) {
+    } catch (err) {
+      const error = err as Error;
       throw new Error(`Failed to save authentication data: ${error.message}`);
     }
   }
@@ -147,10 +164,12 @@ export class AuthService {
         return null;
       }
 
-      const encryptedData = JSON.parse(await fs.readFile(TOKEN_FILE, 'utf8'));
+      const fileContent = await fs.readFile(TOKEN_FILE, 'utf8');
+      const encryptedData = JSON.parse(fileContent);
       const decrypted = await this.decrypt(encryptedData);
-      return JSON.parse(decrypted);
-    } catch (error) {
+      return JSON.parse(decrypted) as AuthData;
+    } catch (err) {
+      const error = err as Error;
       console.error(chalk.yellow('Failed to load auth data:'), error.message);
       return null;
     }
@@ -183,9 +202,10 @@ export class AuthService {
         // Attempt to refresh the token
         const newAuth = await this.refreshToken(authData.refreshToken);
         return newAuth.accessToken;
-      } catch (error) {
+      } catch (err) {
+        const error = err as Error;
         // If refresh fails, force a new login
-        throw new Error('Authentication expired and refresh failed. Please log in again using "graphify auth login".');
+        throw new Error(`Authentication expired and refresh failed: ${error.message}. Please log in again using "graphify auth login".`);
       }
     } else if (this.isTokenExpired(authData)) {
       // No refresh token available
@@ -221,7 +241,21 @@ export class AuthService {
         })
       });
 
-      const data = await response.json();
+      const responseData = await response.json();
+
+      // Type check the response data
+      if (!responseData || typeof responseData !== 'object') {
+        throw new Error('Invalid response from GitHub');
+      }
+
+      const data = responseData as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        scope?: string;
+        error?: string;
+        error_description?: string;
+      };
 
       if (data.error || !data.access_token) {
         throw new Error(data.error_description || 'Failed to refresh token');
@@ -239,7 +273,8 @@ export class AuthService {
       await this.saveAuthData(authData);
 
       return authData;
-    } catch (error) {
+    } catch (err) {
+      const error = err as Error;
       throw new Error(`Token refresh failed: ${error.message}`);
     }
   }
@@ -271,15 +306,15 @@ export class AuthService {
     });
 
     try {
-      // Start auth flow
-      const { token, scopes, expiresAt, refreshToken } = await auth({ type: 'oauth' });
+      // Start auth flow - use our extended type
+      const authResult = await auth({ type: 'oauth' }) as ExtendedOAuthAppAuthentication;
 
       // Create auth data object
       const authData: AuthData = {
-        accessToken: token,
-        refreshToken,
-        scope: scopes,
-        expiresAt: expiresAt?.getTime()
+        accessToken: authResult.token,
+        refreshToken: authResult.refreshToken,
+        scope: authResult.scopes,
+        expiresAt: authResult.expiresAt?.getTime()
       };
 
       // Save token securely
@@ -292,7 +327,8 @@ export class AuthService {
       console.log(`Token securely stored in ${TOKEN_FILE}`);
 
       return;
-    } catch (error) {
+    } catch (err) {
+      const error = err as Error;
       console.error(chalk.red('\nAuthentication failed:'), error.message);
       throw new Error(`GitHub authentication failed: ${error.message}`);
     }
@@ -314,12 +350,13 @@ export class AuthService {
       try {
         await fs.access(TOKEN_FILE);
         await fs.unlink(TOKEN_FILE);
-      } catch {
+      } catch (err) {
         // File doesn't exist, nothing to do
       }
 
       console.log(chalk.green('Successfully logged out from GitHub.'));
-    } catch (error) {
+    } catch (err) {
+      const error = err as Error;
       console.error('Error during logout:', error.message);
       throw new Error(`Logout failed: ${error.message}`);
     }
@@ -342,38 +379,38 @@ export class AuthService {
    */
   public async getUserInfo(): Promise<{ username: string } | null> {
     try {
-      const authData = await this.loadAuthData();
-      if (!authData) {
-        return null;
+      const token = await this.getAuthToken();
+
+      // Call GitHub API to get user info
+      const response = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'Graphify-CLI'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.statusText}`);
       }
 
-      // If we don't have username stored yet, we need to fetch it from GitHub
-      if (!authData.username) {
-        const token = authData.accessToken;
-        const response = await fetch('https://api.github.com/user', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'Graphify-CLI'
-          }
-        });
+      const userData = await response.json() as { login: string, name: string };
 
-        if (response.ok) {
-          const data = await response.json();
-
-          // Update stored auth data with username
-          authData.username = data.login;
+      if (userData && userData.login) {
+        // Update stored auth data with username
+        const authData = await this.loadAuthData();
+        if (authData) {
+          authData.username = userData.login;
           await this.saveAuthData(authData);
-
-          return { username: data.login };
         }
 
-        return null;
+        return { username: userData.login };
       }
 
-      return { username: authData.username };
-    } catch (error) {
-      console.error(chalk.red('Error getting user info:'), error.message);
+      return null;
+    } catch (err) {
+      const error = err as Error;
+      console.error(chalk.yellow('Failed to get user info:'), error.message);
       return null;
     }
   }

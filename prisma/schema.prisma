@@ -11,12 +11,12 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  email         String?   @unique
-  githubId      String    @unique
-  githubLogin   String    @unique
+  id            String       @id @default(cuid())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  email         String?      @unique
+  githubId      String       @unique
+  githubLogin   String       @unique
   name          String?
   avatarUrl     String?
   accessToken   String?
@@ -24,6 +24,31 @@ model User {
   patterns      Pattern[]
   schedules     Schedule[]
   logs          Log[]
+  authTokens    AuthToken[]  // Track tokens issued to this user
+  authSessions  AuthSession[]
+  repositories  Repository[]
+  commits       Commit[]
+}
+
+model AuthToken {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  jti       String    @unique // JWT ID for revocation tracking
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revoked   Boolean   @default(false)
+  expiresAt DateTime
+}
+
+model AuthSession {
+  id           String    @id @default(cuid())
+  createdAt    DateTime  @default(now())
+  provider     String    // e.g., "github", "google"
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Pattern {
@@ -45,21 +70,59 @@ model Pattern {
   logs         Log[]
 }
 
-model Schedule {
+model Repository {
   id           String     @id @default(cuid())
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  name         String?
-  description  String?
-  isActive     Boolean    @default(true)
-  patternId    String
-  pattern      Pattern    @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  name         String
+  fullName     String     // Format: "owner/repo"
+  url          String
   userId       String
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rrule        String     // RRule string representation
-  lastRun      DateTime?  // Last time the schedule was executed
-  nextRun      DateTime?  // Next scheduled execution time
+  schedules    Schedule[] // Many-to-many relation with schedules
+  commits      Commit[]
+}
+
+model Schedule {
+  id           String        @id @default(cuid())
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  name         String?
+  description  String?
+  isActive     Boolean       @default(true)
+  status       String        @default("PENDING") // Added status field
+  settings     String?       // JSON stringified settings
+  patternId    String
+  pattern      Pattern       @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rrule        String?       // RRule string representation (optional now)
+  lastRun      DateTime?     // Last time the schedule was executed
+  nextRun      DateTime?     // Next scheduled execution time
+  startDate    DateTime      @default(now()) // Added required startDate
+  endDate      DateTime?     // Optional end date
+  commitCount  Int           @default(1)     // Default to 1 commit
+  days         Int[]         @default([0, 1, 2, 3, 4, 5, 6]) // Default to all days
+  active       Boolean       @default(true)  // Whether this schedule is active
+  repositories Repository[]  // Many-to-many relation with repositories
+  commits      Commit[]      // One-to-many relation with commits
   logs         Log[]
+}
+
+model Commit {
+  id           String      @id @default(cuid())
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  message      String
+  date         DateTime    // When this commit should be executed
+  status       String      // PENDING, COMPLETED, FAILED, CANCELLED
+  hash         String?     // Git commit hash (once executed)
+  scheduleId   String
+  schedule     Schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  repositoryId String
+  repository   Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Log {

@@ -2,34 +2,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { DateTime } from 'luxon';
 import { RRule, Frequency } from 'rrule';
-import { Schedule, Repository, Pattern } from '@prisma/client';
+import { Schedule, Repository, Pattern, Commit } from '@prisma/client';
 import { Octokit } from '@octokit/rest';
-import { processBatchedCommits } from '@graphify/shared';
+import {
+  CommitScheduleOptions,
+  ScheduledCommit,
+  mapPatternToSchedule,
+  checkScheduleAuthenticity,
+  processBatchedCommits
+} from '@graphify/shared';
 
-interface CommitScheduleOptions {
-  startDate: Date;
-  endDate: Date;
-  pattern: number[][];
-  density: number;
-  randomize: boolean;
-  timezone: string;
-  workHoursOnly: boolean;
-  avoidWeekends: boolean;
-  maxCommitsPerDay: number;
-  recurrence?: {
-    frequency: 'daily' | 'weekly' | 'monthly';
-    interval?: number;
-    count?: number;
-    until?: Date;
-  };
-}
-
-interface ScheduledCommit {
-  date: DateTime;
-  message?: string;
-  weight: number;
-  repositoryId: string;
-  status: string;
+// Interface for schedule creation with repositories
+interface ScheduleCreateWithRepositories {
+  userId: string;
+  patternId: string;
+  repositories: Repository[];
+  settings: CommitScheduleOptions;
 }
 
 @Injectable()
@@ -39,7 +27,7 @@ export class ScheduleService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async createSchedule(userId: number, patternId: number, repositories: Repository[], settings: any): Promise<Schedule> {
+  async createSchedule(userId: string, patternId: string, repositories: Repository[], settings: CommitScheduleOptions): Promise<Schedule> {
     try {
       // First verify the pattern exists
       const pattern = await this.prisma.pattern.findUnique({
@@ -55,17 +43,29 @@ export class ScheduleService {
         data: {
           userId,
           patternId,
-          repositories: {
-            connect: repositories.map(repo => ({ id: repo.id }))
-          },
+          status: 'PENDING',
           settings: JSON.stringify(settings),
-          status: 'PENDING'
-        },
+          startDate: settings.startDate,
+          endDate: settings.endDate,
+          active: true,
+        }
       });
+
+      // Create repository connections
+      for (const repo of repositories) {
+        await this.prisma.schedule.update({
+          where: { id: schedule.id },
+          data: {
+            repositories: {
+              connect: { id: repo.id }
+            }
+          }
+        });
+      }
 
       // Generate the commit schedule
       const commitSchedule = await this.generateCommitSchedule(
-        pattern,
+        pattern as unknown as Pattern,
         repositories,
         settings,
         schedule.id
@@ -78,8 +78,9 @@ export class ScheduleService {
             scheduleId: schedule.id,
             message: commit.message || `Commit for pattern ${pattern.name}`,
             date: commit.date.toJSDate(),
-            repositoryId: commit.repositoryId,
-            status: 'PENDING'
+            repositoryId: commit.repositoryId as string,
+            status: 'PENDING',
+            userId // Add the user ID for the commit
           }
         });
       }
@@ -95,7 +96,7 @@ export class ScheduleService {
     }
   }
 
-  async getSchedulesByPattern(patternId: number): Promise<Schedule[]> {
+  async getSchedulesByPattern(patternId: string): Promise<Schedule[]> {
     return this.prisma.schedule.findMany({
       where: { patternId },
       include: {
@@ -105,7 +106,6 @@ export class ScheduleService {
         user: {
           select: {
             id: true,
-            username: true,
             email: true
           }
         }
@@ -113,7 +113,7 @@ export class ScheduleService {
     });
   }
 
-  async getSchedulesByUser(userId: number): Promise<Schedule[]> {
+  async getSchedulesByUser(userId: string): Promise<Schedule[]> {
     return this.prisma.schedule.findMany({
       where: { userId },
       include: {
@@ -126,7 +126,6 @@ export class ScheduleService {
         user: {
           select: {
             id: true,
-            username: true,
             email: true
           }
         }
@@ -134,7 +133,7 @@ export class ScheduleService {
     });
   }
 
-  async getScheduleById(id: number): Promise<Schedule | null> {
+  async getScheduleById(id: string): Promise<Schedule | null> {
     return this.prisma.schedule.findUnique({
       where: { id },
       include: {
@@ -144,7 +143,6 @@ export class ScheduleService {
         user: {
           select: {
             id: true,
-            username: true,
             email: true
           }
         }
@@ -152,7 +150,7 @@ export class ScheduleService {
     });
   }
 
-  async cancelSchedule(id: number): Promise<Schedule> {
+  async cancelSchedule(id: string): Promise<Schedule> {
     // Cancel any pending commits
     await this.prisma.commit.updateMany({
       where: {
@@ -167,50 +165,46 @@ export class ScheduleService {
     // Update schedule status
     return this.prisma.schedule.update({
       where: { id },
-      data: { status: 'CANCELLED' }
+      data: {
+        status: 'CANCELLED',
+        active: false
+      }
     });
   }
 
+  /**
+   * Generates scheduled commits for the given pattern, repositories, and settings
+   * Uses the shared utility functions from @graphify/shared
+   */
   private async generateCommitSchedule(
     pattern: Pattern,
     repositories: Repository[],
     settings: CommitScheduleOptions,
-    scheduleId: number
+    scheduleId: string
   ): Promise<ScheduledCommit[]> {
     try {
-      const {
-        startDate,
-        endDate,
-        density,
-        randomize,
-        timezone,
-        workHoursOnly,
-        avoidWeekends,
-        maxCommitsPerDay,
-        recurrence
-      } = settings;
-
       // Parse pattern grid from JSON string
       const patternGrid = JSON.parse(pattern.grid as string) as number[][];
 
       // Prepare options for commit scheduling algorithm
       const options: CommitScheduleOptions = {
-        startDate,
-        endDate,
+        ...settings,
         pattern: patternGrid,
-        density,
-        randomize,
-        timezone,
-        workHoursOnly,
-        avoidWeekends,
-        maxCommitsPerDay,
-        recurrence
       };
 
-      const scheduledCommits = this.mapPatternToCommits(options, repositories);
+      // Use the shared utility to map pattern to commit schedule
+      let scheduledCommits: ScheduledCommit[] = mapPatternToSchedule(options);
 
-      // Check for authenticity issues
-      const issues = this.checkScheduleAuthenticity(scheduledCommits);
+      // Assign repositories to commits
+      scheduledCommits = scheduledCommits.map(commit => ({
+        ...commit,
+        repositoryId: repositories[Math.floor(Math.random() * repositories.length)].id,
+        status: 'PENDING'
+      }));
+
+      // Check for authenticity issues using the shared utility
+      const issues = checkScheduleAuthenticity(scheduledCommits);
+
       if (issues.length > 0) {
         this.logger.warn(`Authenticity issues detected for schedule ${scheduleId}: ${issues.join(', ')}`);
       }
@@ -222,200 +216,9 @@ export class ScheduleService {
     }
   }
 
-  private mapPatternToCommits(
-    options: CommitScheduleOptions,
-    repositories: Repository[]
-  ): ScheduledCommit[] {
-    const {
-      startDate,
-      endDate,
-      pattern,
-      density = 0.7,
-      randomize = true,
-      timezone = 'local',
-      workHoursOnly = false,
-      avoidWeekends = true,
-      maxCommitsPerDay = 5,
-      recurrence
-    } = options;
-
-    // If recurrence is specified, use RRule to generate dates
-    if (recurrence) {
-      return this.createRecurringSchedule(options, repositories);
-    }
-
-    // Calculate the date range
-    const start = DateTime.fromJSDate(startDate).setZone(timezone);
-    const end = DateTime.fromJSDate(endDate).setZone(timezone);
-    const totalDays = end.diff(start, 'days').days;
-
-    // Calculate pattern dimensions
-    const rows = pattern.length;
-    const cols = pattern[0]?.length || 0;
-    const totalCells = rows * cols;
-
-    // Days per cell (how many calendar days each cell in the pattern represents)
-    const daysPerCell = Math.max(1, Math.floor(totalDays / totalCells));
-
-    const scheduledCommits: ScheduledCommit[] = [];
-
-    // Map each cell in the pattern to potential commit dates
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const cellValue = pattern[row][col];
-        if (cellValue <= 0) continue; // Skip empty cells
-
-        // Calculate the date for this cell
-        const dayOffset = (row * cols + col) * daysPerCell;
-        const baseDate = start.plus({ days: dayOffset });
-
-        // Determine number of commits for this cell based on cell value and density
-        const commitsForCell = Math.min(
-          maxCommitsPerDay,
-          Math.ceil(cellValue * density * (randomize ? (0.5 + Math.random() * 0.5) : 1))
-        );
-
-        // Schedule commits for this cell
-        for (let i = 0; i < commitsForCell; i++) {
-          // Select a random repository for this commit
-          const repository = repositories[Math.floor(Math.random() * repositories.length)];
-
-          let commitDate = baseDate.plus({
-            days: randomize ? Math.floor(Math.random() * daysPerCell) : 0,
-            hours: randomize ? Math.floor(Math.random() * 24) : 12,
-            minutes: randomize ? Math.floor(Math.random() * 60) : 0
-          });
-
-          // Apply authenticity constraints
-          if (workHoursOnly) {
-            // Adjust to work hours (9-5)
-            if (commitDate.hour < 9 || commitDate.hour > 17) {
-              commitDate = commitDate.set({ hour: 9 + Math.floor(Math.random() * 8) });
-            }
-          }
-
-          // Reduce weekend commits if specified
-          if (avoidWeekends && (commitDate.weekday === 6 || commitDate.weekday === 7)) {
-            // 70% chance to skip weekend commits
-            if (Math.random() < 0.7) continue;
-          }
-
-          scheduledCommits.push({
-            date: commitDate,
-            weight: cellValue,
-            message: `Commit for ${pattern.name} at cell [${row},${col}]`,
-            repositoryId: repository.id,
-            status: 'PENDING'
-          });
-        }
-      }
-    }
-
-    // Sort commits by date
-    return scheduledCommits.sort((a, b) => a.date.toMillis() - b.date.toMillis());
-  }
-
-  private createRecurringSchedule(
-    options: CommitScheduleOptions,
-    repositories: Repository[]
-  ): ScheduledCommit[] {
-    if (!options.recurrence) {
-      return this.mapPatternToCommits(options, repositories);
-    }
-
-    const { recurrence } = options;
-
-    // Map frequency string to RRule frequency
-    const frequencyMap: Record<string, Frequency> = {
-      'daily': Frequency.DAILY,
-      'weekly': Frequency.WEEKLY,
-      'monthly': Frequency.MONTHLY
-    };
-
-    // Create base rule
-    const rule = new RRule({
-      freq: frequencyMap[recurrence.frequency],
-      interval: recurrence.interval || 1,
-      count: recurrence.count,
-      until: recurrence.until,
-      dtstart: options.startDate
-    });
-
-    // Generate recurring dates
-    const recurDates = rule.all();
-
-    let allCommits: ScheduledCommit[] = [];
-
-    // For each recurrence, create a schedule
-    for (const recurDate of recurDates) {
-      // Clone options but update the date range to be based on this recurrence
-      const patternLength = options.pattern.length > 0 ? options.pattern[0].length : 1;
-      const recurOptions: CommitScheduleOptions = {
-        ...options,
-        startDate: recurDate,
-        endDate: new Date(recurDate.getTime() + (24 * 60 * 60 * 1000 * patternLength))
-      };
-
-      // Get commits for this recurrence
-      const commits = this.mapPatternToCommits(recurOptions, repositories);
-      allCommits = [...allCommits, ...commits];
-    }
-
-    return allCommits.sort((a, b) => a.date.toMillis() - b.date.toMillis());
-  }
-
-  private checkScheduleAuthenticity(commits: ScheduledCommit[]): string[] {
-    const issues: string[] = [];
-
-    // Group commits by day
-    const commitsByDay = new Map<string, ScheduledCommit[]>();
-
-    for (const commit of commits) {
-      const dayKey = commit.date.toFormat('yyyy-MM-dd');
-      if (!commitsByDay.has(dayKey)) {
-        commitsByDay.set(dayKey, []);
-      }
-      commitsByDay.get(dayKey)!.push(commit);
-    }
-
-    // Check for too many commits in one day
-    for (const [day, dayCommits] of commitsByDay.entries()) {
-      if (dayCommits.length > 15) {
-        issues.push(`Suspicious pattern: ${dayCommits.length} commits on ${day} (too many in one day)`);
-      }
-    }
-
-    // Check for commits at exactly the same time
-    const commitTimes = new Map<number, number>();
-    for (const commit of commits) {
-      const timeKey = commit.date.toMillis();
-      commitTimes.set(timeKey, (commitTimes.get(timeKey) || 0) + 1);
-    }
-
-    for (const [time, count] of commitTimes.entries()) {
-      if (count > 1) {
-        const dateStr = DateTime.fromMillis(time).toFormat('yyyy-MM-dd HH:mm:ss');
-        issues.push(`Suspicious pattern: ${count} commits at exactly the same time (${dateStr})`);
-      }
-    }
-
-    // Check for uniformly spaced commits (too regular)
-    if (commits.length > 3) {
-      const intervals: number[] = [];
-      for (let i = 1; i < commits.length; i++) {
-        intervals.push(commits[i].date.toMillis() - commits[i-1].date.toMillis());
-      }
-
-      // Check if all intervals are the same (would be suspicious)
-      const allSame = intervals.every(interval => interval === intervals[0]);
-      if (allSame && commits.length > 5) {
-        issues.push(`Suspicious pattern: ${commits.length} commits are spaced at exactly equal intervals`);
-      }
-    }
-
-    return issues;
-  }
-
+  /**
+   * Executes all pending scheduled commits
+   */
   async executeScheduledCommits(): Promise<void> {
     try {
       // Find all pending commits that are due
@@ -450,7 +253,7 @@ export class ScheduleService {
         // Get the most recent valid GitHub token for this user
         const authSession = await this.prisma.authSession.findFirst({
           where: {
-            userId: parseInt(userId),
+            userId: userId,
             provider: 'github',
             expiresAt: { gt: new Date() } // Only get valid tokens
           },
@@ -518,7 +321,7 @@ export class ScheduleService {
     const commitsByUser = new Map<string, any[]>();
 
     for (const commit of commits) {
-      const userId = commit.schedule.user.id.toString();
+      const userId = commit.schedule.user.id;
       if (!commitsByUser.has(userId)) {
         commitsByUser.set(userId, []);
       }
@@ -526,54 +329,6 @@ export class ScheduleService {
     }
 
     return commitsByUser;
-  }
-
-  // Process a single user's commits with rate limiting
-  private async processUserCommits(commits: any[], octokit: Octokit): Promise<void> {
-    for (let i = 0; i < commits.length; i++) {
-      const commit = commits[i];
-
-      try {
-        await this.executeCommit(commit, octokit);
-
-        // Add delay between API calls to respect rate limits
-        // Only add delay if it's not the last commit
-        if (i < commits.length - 1) {
-          await this.delay(this.GITHUB_API_INTERVAL_MS);
-        }
-      } catch (error) {
-        this.logger.error(`Error executing commit ${commit.id}: ${error.message}`, error.stack);
-
-        // Mark as failed
-        await this.prisma.commit.update({
-          where: { id: commit.id },
-          data: { status: 'FAILED' }
-        });
-
-        // Create an error log
-        await this.prisma.log.create({
-          data: {
-            type: 'ERROR',
-            message: `Failed to create commit: ${error.message}`,
-            details: {
-              commitId: commit.id,
-              repository: commit.repository.fullName,
-              scheduledDate: commit.date,
-              error: error.message
-            },
-            success: false,
-            userId: commit.schedule.user.id,
-            scheduleId: commit.schedule.id
-          }
-        });
-
-        // If this is a rate limit error, add a longer delay before continuing
-        if (error.status === 403 && error.message.includes('API rate limit exceeded')) {
-          this.logger.warn(`Rate limit exceeded, pausing for 60 seconds`);
-          await this.delay(60000); // Wait 60 seconds
-        }
-      }
-    }
   }
 
   // Execute a single commit
@@ -608,7 +363,7 @@ export class ScheduleService {
       });
 
       // Create a new blob with some content
-      const timestamp = commit.date.toISOString();
+      const timestamp = new Date(commit.date).toISOString();
       const content = `# Graphify Commit\n\nThis commit was automatically generated by Graphify on ${timestamp}\n\nPattern: ${commit.schedule.pattern?.name || 'Unknown'}\n`;
 
       const { data: blob } = await octokit.git.createBlob({
@@ -641,13 +396,13 @@ export class ScheduleService {
         tree: tree.sha,
         parents: [latestCommitSha],
         author: {
-          name: user.name || user.githubLogin,
-          email: user.email || `${user.githubLogin}@users.noreply.github.com`,
+          name: user.name || user.githubLogin || user.email,
+          email: user.email || `${user.githubLogin || user.id}@users.noreply.github.com`,
           date: new Date(commit.date).toISOString() // Use the scheduled date for the commit
         },
         committer: {
-          name: user.name || user.githubLogin,
-          email: user.email || `${user.githubLogin}@users.noreply.github.com`,
+          name: user.name || user.githubLogin || user.email,
+          email: user.email || `${user.githubLogin || user.id}@users.noreply.github.com`,
           date: new Date(commit.date).toISOString()
         }
       });
@@ -761,6 +516,7 @@ export class ScheduleService {
     return this.prisma.schedule.create({
       data: {
         patternId: data.patternId,
+        userId: data.userId,
         startDate: data.startDate,
         endDate: data.endDate,
         commitCount: data.commitCount || 1,
@@ -790,7 +546,13 @@ export class ScheduleService {
 
     return this.prisma.schedule.update({
       where: { id },
-      data,
+      data: {
+        startDate: data.startDate,
+        endDate: data.endDate,
+        commitCount: data.commitCount,
+        days: data.days,
+        active: data.active
+      },
       include: { pattern: true }
     });
   }
