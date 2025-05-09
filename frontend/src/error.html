@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Page Not Found - Graphify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --primary-color: #2a70e0;
+      --text-color: #333333;
+      --bg-color: #f9fafb;
+      --border-color: #e5e7eb;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 28rem;
+      background-color: white;
+      border-radius: 0.5rem;
+      box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.1);
+      padding: 2rem;
+      margin-bottom: 2rem;
+      border-top: 4px solid var(--primary-color);
+    }
+
+    h1 {
+      color: var(--primary-color);
+      margin-bottom: 1rem;
+      font-size: 1.875rem;
+    }
+
+    p {
+      margin-bottom: 1.5rem;
+      line-height: 1.6;
+    }
+
+    .error-code {
+      font-size: 5rem;
+      font-weight: bold;
+      color: var(--primary-color);
+      opacity: 0.2;
+      margin-bottom: 1rem;
+    }
+
+    .btn {
+      display: inline-block;
+      background-color: var(--primary-color);
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.25rem;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background-color 0.15s ease;
+    }
+
+    .btn:hover {
+      background-color: #1d5bbf;
+    }
+
+    .footer {
+      margin-top: 2rem;
+      color: #6b7280;
+      font-size: 0.875rem;
+    }
+
+    .footer a {
+      color: var(--primary-color);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="error-code">404</div>
+    <h1>Page Not Found</h1>
+    <p>The page you're looking for doesn't exist or has been moved.</p>
+    <p>Don't worry though, you can return to our homepage and continue exploring Graphify.</p>
+    <a href="/Graphify/" class="btn">Back to Homepage</a>
+  </div>
+
+  <div class="footer">
+    <p>Graphify - GitHub Activity Visualization Tool</p>
+    <p>Created by <a href="https://github.com/iiXXiXii" target="_blank">iiXXiXii</a></p>
+  </div>
+
+  <script>
+    // Automatically redirect after 5 seconds
+    setTimeout(() => {
+      window.location.href = "/Graphify/";
+    }, 5000);
+  </script>
+</body>
+</html>

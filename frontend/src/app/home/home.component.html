@@ -1,0 +1,100 @@
+<div class="max-w-4xl mx-auto px-4 py-12">
+  <header class="text-center mb-16">
+    <h1 class="text-4xl font-bold text-primary mb-4">Welcome to {{ title }}</h1>
+    <p class="text-xl text-gray-600 mb-2">Your GitHub contribution graph customization tool</p>
+    <p class="text-gray-500 mb-8">by <a href="https://github.com/iiXXiXii" target="_blank" class="text-primary hover:underline">@iiXXiXii</a></p>
+
+    <!-- Demo visualization of a contribution graph -->
+    <div class="bg-white p-6 rounded-lg shadow-md mx-auto max-w-2xl my-8">
+      <h3 class="text-lg font-medium text-gray-700 mb-4">Sample Contribution Pattern</h3>
+      <div class="grid grid-cols-7 gap-1 justify-center">
+        <!-- Generate a sample contribution graph with different intensity levels -->
+        <ng-container *ngFor="let week of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]">
+          <div *ngFor="let day of [1, 2, 3, 4, 5, 6, 7]"
+               [class]="'w-4 h-4 rounded-sm ' + getRandomColorClass()">
+          </div>
+        </ng-container>
+      </div>
+      <p class="text-xs text-gray-500 mt-3">Design your own pattern with our visual editor</p>
+    </div>
+  </header>
+
+  <section class="grid md:grid-cols-3 gap-8 mb-16">
+    <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
+      <div class="text-primary mb-4">
+        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+          <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <h2 class="text-2xl font-semibold mb-3 text-gray-800">Track Your Patterns</h2>
+      <p class="text-gray-600">Create and monitor custom coding patterns over time</p>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
+      <div class="text-primary mb-4">
+        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
+          <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" />
+        </svg>
+      </div>
+      <h2 class="text-2xl font-semibold mb-3 text-gray-800">Visualize Progress</h2>
+      <p class="text-gray-600">See your GitHub activity in beautiful, insightful graphs</p>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
+      <div class="text-primary mb-4">
+        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <h2 class="text-2xl font-semibold mb-3 text-gray-800">Set Schedules</h2>
+      <p class="text-gray-600">Plan your development work with smart scheduling</p>
+    </div>
+  </section>
+
+  <section class="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-primary p-6 rounded-r-lg mb-12">
+    <h3 class="text-xl font-semibold mb-4 text-gray-800">How It Works</h3>
+    <div class="space-y-4">
+      <div class="flex items-start">
+        <span class="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-white font-bold text-sm mr-4">1</span>
+        <div>
+          <p class="font-medium text-gray-700">Design your contribution pattern</p>
+          <p class="text-gray-600">Use our intuitive visual editor to create custom patterns</p>
+        </div>
+      </div>
+      <div class="flex items-start">
+        <span class="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-white font-bold text-sm mr-4">2</span>
+        <div>
+          <p class="font-medium text-gray-700">Schedule your activity</p>
+          <p class="text-gray-600">Set up when and how your contributions will appear</p>
+        </div>
+      </div>
+      <div class="flex items-start">
+        <span class="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-white font-bold text-sm mr-4">3</span>
+        <div>
+          <p class="font-medium text-gray-700">Watch your profile transform</p>
+          <p class="text-gray-600">See your GitHub profile showcase your unique pattern</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-white border border-gray-200 p-6 rounded-lg mb-12">
+    <h3 class="text-xl font-semibold mb-2 text-gray-800">About This Demo</h3>
+    <p class="text-gray-600 mb-2">This is a GitHub Pages deployment of the Graphify application.</p>
+    <p class="text-gray-600">For the full experience with backend services, clone the repository and follow setup instructions.</p>
+    <div class="mt-4">
+      <a href="https://github.com/iiXXiXii/Graphify" target="_blank" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+        <svg class="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+          <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd" />
+        </svg>
+        View on GitHub
+      </a>
+    </div>
+  </section>
+
+  <footer class="text-center text-gray-500 pt-8 border-t border-gray-200">
+    <p>Graphify - GitHub Pages Demo | <a href="https://github.com/iiXXiXii/Graphify" target="_blank" class="text-primary hover:underline">View on GitHub</a></p>
+  </footer>
+</div>

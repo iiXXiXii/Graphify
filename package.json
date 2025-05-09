@@ -13,6 +13,8 @@
     "dev:backend": "bun run --cwd backend start:dev",
     "dev:cli": "bun run --cwd graphify-cli dev",
     "build:frontend": "bun run --cwd frontend build",
+    "build:frontend:github-pages": "bun run --cwd frontend build:github-pages",
+    "test:github-pages": "bun run --cwd frontend test:github-pages",
     "build:backend": "bun run --cwd backend build",
     "build:cli": "bun run --cwd graphify-cli build",
     "build": "bun run build:frontend && bun run build:backend && bun run build:cli",
@@ -40,5 +42,9 @@
     "inquirer": "^12.6.0",
     "luxon": "^3.6.1",
     "simple-git": "^3.27.0"
-  }
+  },
+  "trustedDependencies": [
+    "@nestjs/core",
+    "@parcel/watcher"
+  ]
 }

@@ -29,6 +29,21 @@
                 "glob": "404.html",
                 "input": "src",
                 "output": "/"
+              },
+              {
+                "glob": "error.html",
+                "input": "src",
+                "output": "/"
+              },
+              {
+                "glob": "**/*",
+                "input": "src/assets",
+                "output": "/assets"
+              },
+              {
+                "glob": ".nojekyll",
+                "input": "src/assets",
+                "output": "/"
               }
             ],
             "styles": [
@@ -64,10 +79,15 @@
               "sourceMap": true
             },
             "github-pages": {
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.github-pages.ts"
+                }
+              ],
               "outputHashing": "all",
               "baseHref": "/Graphify/",
               "optimization": true,
-              "outputPath": "docs",
               "outputMode": "static"
             }
           },
@@ -110,5 +130,8 @@
         }
       }
     }
+  },
+  "cli": {
+    "analytics": false
   }
 }

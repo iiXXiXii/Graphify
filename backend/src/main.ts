@@ -2,14 +2,18 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
-import helmet from 'helmet';
-import * as compression from 'compression';
-import * as cookieParser from 'cookie-parser';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import fastifyCookie from '@fastify/cookie';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter({
+      logger: false, // NestJS already provides logging
+    })
+  );
   const configService = app.get(ConfigService);
 
   // Get configuration values
@@ -18,25 +22,25 @@ async function bootstrap() {
   const nodeEnv = configService.get('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
 
-  // Security setup
-  app.use(helmet());
+  // Security setup - register as Fastify plugin
+  await app.register(import('@fastify/helmet'));
 
-  // Enable compression to reduce bandwidth
-  app.use(compression());
+  // Enable compression to reduce bandwidth - register as Fastify plugin
+  await app.register(import('@fastify/compress'));
 
-  // Parse cookies
-  app.use(cookieParser());
+  // Parse cookies - register as Fastify plugin
+  await app.register(fastifyCookie);
 
   // CORS setup - more permissive for the publicly hosted version
   const corsSettings = {
     origin: corsOrigin === '*' ?
-      (req, callback) => callback(null, true) : // Allow any origin if set to '*'
+      true : // Allow any origin if set to '*'
       corsOrigin.split(','), // Otherwise use specific origins
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
     credentials: true,
     allowedHeaders: 'Content-Type,Authorization,X-Requested-With,Accept',
   };
-  app.enableCors(corsSettings);
+  await app.enableCors(corsSettings);
 
   // API versioning prefix
   app.setGlobalPrefix('api/v1');
@@ -50,14 +54,17 @@ async function bootstrap() {
 
   // Set up rate limiting if in production
   if (isProduction) {
-    const rateLimit = require('express-rate-limit');
-    app.use(
-      rateLimit({
-        windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 100, // limit each IP to 100 requests per windowMs
-        message: 'Too many requests from this IP, please try again later',
-      }),
-    );
+    await app.register(import('@fastify/rate-limit'), {
+      max: 100,
+      timeWindow: '15 minutes',
+      errorResponseBuilder: (request, context) => {
+        return {
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: 'Too many requests from this IP, please try again later'
+        };
+      }
+    });
   }
 
   // Start the server

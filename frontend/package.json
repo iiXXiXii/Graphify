@@ -5,6 +5,8 @@
     "ng": "bunx ng",
     "start": "bunx ng serve",
     "build": "bunx ng build",
+    "build:github-pages": "bunx ng build --configuration=github-pages",
+    "test:github-pages": "bunx ng build --configuration=github-pages && bunx http-server dist/frontend -p 8080 --cors -o -c-1",
     "watch": "bunx ng build --watch --configuration development",
     "test": "bunx ng test",
     "serve:ssr:frontend": "bun dist/frontend/server/server.mjs"
@@ -29,15 +31,21 @@
     "@angular-devkit/build-angular": "^19.2.8",
     "@angular/cli": "^19.2.8",
     "@angular/compiler-cli": "^19.2.0",
+    "@types/bun": "latest",
     "@types/express": "^4.17.17",
     "@types/jasmine": "~5.1.0",
     "@types/node": "^18.18.0",
+    "autoprefixer": "^10.4.21",
     "jasmine-core": "~5.6.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^4.1.5",
     "typescript": "~5.7.2"
-  }
+  },
+  "module": "index.ts",
+  "type": "module"
 }
