@@ -1,5 +1,7 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://graphify-backend.fly.dev/api/v1', // Fly.io backend API URL
-  graphqlUrl: 'https://graphify-backend.fly.dev/graphql', // Fly.io GraphQL endpoint
+  // For GitHub Pages without a backend, use local storage and mock data
+  useMockData: true,  // Flag to use mock data instead of API calls
+  apiUrl: '', // Will be configured when you choose a backend hosting solution
+  graphqlUrl: '', // Will be configured when you choose a backend hosting solution
 };
